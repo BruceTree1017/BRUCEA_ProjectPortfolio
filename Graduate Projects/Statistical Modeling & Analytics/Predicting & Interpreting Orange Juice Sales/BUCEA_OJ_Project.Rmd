@@ -1,0 +1,783 @@
+---
+title: 'Machine Learning: Factors Influencing Orange Juice Purchases'
+author: "Adam Bruce"
+date: "2024-02-21"
+output:
+  word_document: default
+---
+
+```{r, include = FALSE}
+library(tidyverse)
+library(ggplot2)
+library(GGally)
+library(gridExtra)
+library(caret)
+library(ISLR)
+library(kableExtra)
+library(corrplot)
+library(DescTools) 
+library(sjPlot)
+library(readr)
+source("OptimalCutoff.R")
+
+
+
+data(OJ)
+
+OJ <- OJ
+```
+
+### Introduction
+
+In the grocery industry, understanding customer preference for purchasing an item is of critical importance. The more we understand preferences, the more we can optimize sales through methods like targeted marketing and closeouts. Here, we will use logistic regression to look at both how accurately we can predict and how well we can interpret purchases between two Orange Juice brands: Citrus Hill (hereafter CH) or Minute Maid (hereafter MM). Ultimately, this assessment aims to provide valuable insights into reliably classifying customer purchases and may be adapted to other products of interest for our store.
+
+
+```{r, include = FALSE, warning = FALSE, fig.height = 6}
+color_blind_friendly <- c("#CC7917", "#0072B2","#CC7917", "#0072B2")
+color_blind_friendly2 <- c("#CC7917", "#0072B2", "#CC79A7")
+color_blind_fill <- c("#F0E442", "#CC79A7")
+
+# Missing Values? 
+
+missing_values = sum(is.na(OJ))
+
+missing_values
+
+# Response Variable: CH == 1 Success, MM = 0 Failure
+
+levels(OJ$Purchase)
+OJ <- OJ %>% mutate(Purchase = as.factor(ifelse(Purchase == "CH", 0, 1)))
+glimpse(OJ)
+
+# Prevelance
+
+OJ_numbers <- 
+  ggplot(OJ, aes(x = Purchase, fill = Purchase)) +
+  geom_bar()+
+  geom_text(stat='count', aes(label=..count..), vjust=3, size = 4)+
+  labs(title = "Count of Orange Juice Purchases for 1070 Customers:
+                1 = Minute Maid, 0 = Citrus Hill", y = "Total Number of Customers", x = "Orange Juice Type")+
+  scale_fill_manual(values = color_blind_fill, name = "User Purchase")+
+  theme_classic()
+
+OJ_numbers
+
+# Convert Numeric Categorical Variables to Strictly Categorical 
+
+OJ <- OJ %>% mutate(across(c(StoreID, SpecialCH, SpecialMM, STORE), factor))
+
+
+```
+
+
+```{r, include = FALSE, warning = FALSE, fig.height = 11}
+# Multicollinearity among numeric predictors 
+# Using its own section so I can adjust fig height to fit labels!
+
+Multicolinearity_OJ <- 
+  OJ %>% ggpairs(c("WeekofPurchase","PriceCH","PriceMM", "LoyalCH", "SalePriceMM", "SalePriceCH", "PriceDiff", "ListPriceDiff", "DiscCH", "DiscMM", "PctDiscCH", "PctDiscMM"))
+
+OJ_numeric <- OJ %>% dplyr::select(WeekofPurchase, PriceCH, PriceMM, LoyalCH, SalePriceMM, SalePriceCH, PriceDiff, ListPriceDiff, DiscCH, DiscMM, PctDiscCH, PctDiscMM)
+
+# Multicolinearity:
+
+# PriceCH : WeekofPurchase = 0.704
+# PriceDiff : SalePriceMM = 0.853
+# DiscMM : SalePriceMM = -0.847
+# PctDiscMM : SalePriceMM = -0.857
+# PctDiscCH : SalePriceCH = -0.723
+# DiscCH : SalePriceCH = -0.711
+# DiscMM : PriceDiff = -0.824
+# PctDiscMM : PriceDiff = -0.828
+# PctDiscCH : DiscCH = 0.999
+# PctDiscMM : DiscMM = 0.999
+
+# Remove Store7 because if an item was purchased on sale at store seven it will be indicated in StoreID and 
+# PctDiscCH/MM because we know the discount price amount so the percentage is just the same information represented in a different way.
+# SalePriceMM/SalePriceCH because we have an indication of the discount price amount in DiscMM/DiscCH
+# PriceDiff because information on MM sale prices (SalePriceMM) provides the same insights as this variable. 
+# Remove STORE since we want to identify sales by StoreID, not 0 through 4 sale occurence reference. This is essentially represented by StoreID already
+
+OJ <- OJ %>% dplyr::select(-Store7, -SalePriceCH, -SalePriceMM, -PctDiscCH, -PctDiscMM, -PriceDiff, -STORE, -WeekofPurchase, -ListPriceDiff)
+
+# Repeat Multicolinearity to investigate distributions of explanatory variables
+
+Multicolinearity_OJ_2 <- 
+  OJ %>% ggpairs(c("PriceCH","PriceMM", "LoyalCH", "DiscMM", "DiscCH"))
+
+# Multicolinearity_OJ_2
+
+# The explanatory distributions of DiscCH and DiscMM are unsurprisingly right skewed as discounts are not typically huge. We will log transform them and then look at the distributions again. However, this transformation will be done on a dataset I will call "OJ2" to be used solely when modeling for predictions to make interpretation easier in that section.
+
+OJ2 <- OJ %>% mutate(DiscCH = log10(DiscCH + 1), DiscMM = log10(DiscMM + 1))
+
+Multicolinearity_OJ2 <- 
+  OJ2 %>% ggpairs(c("PriceCH","PriceMM", "LoyalCH", "DiscMM", "DiscCH"))
+
+# Multicolinearity_OJ2
+
+# A log transformation was not helpful for correcting skewness, so I will leave the variables as is and work solely with the OJ dataset. 
+
+# Investigating Specials
+
+# I Will combine the variables `SpecialCH and `SpecialMM` into a new variable to indicate whether Neither brand is on special (0), the special is ONLY on CH (1), the special is ONLY on MM (2) 
+
+# A discount offered on both (3) was discarded because only 4 stores had this case. In each case, the data suggests an entry error because only MM was on sale! These rows will be excluded!
+
+
+OJ$SaleType <- paste(OJ$SpecialCH, OJ$SpecialMM) 
+
+OJ <- OJ %>% mutate(SaleType = case_when(
+  SaleType == "0 0" ~ "0",
+  SaleType == "0 1" ~ "1",
+  SaleType == "1 0" ~ "2"
+))
+
+# Now get rid of SpecialCH and SpecialMM
+
+OJ <- OJ %>% dplyr::select(-SpecialCH, -SpecialMM)
+
+OJ <- OJ %>% drop_na()
+
+OJ$SaleType <- as.factor(OJ$SaleType)
+
+# Explore Relationships/outliers/number of observations for numeric and categorical variables remaining. 
+
+```
+
+
+
+
+```{r, include = FALSE, warning = FALSE, fig.width = 7}
+
+### Categorical Observations
+
+# StoreID
+
+OJ_stores <- OJ %>% group_by(Purchase, StoreID) %>% summarize(Num_Observations = n())
+
+
+
+# SaleType
+
+OJ_sales <- OJ %>% group_by(Purchase, SaleType) %>% summarize(Num_Observations = n())
+
+
+
+# For sampling with bootstrapping we should have at least 20 events per variable, which is reasonable here for both variables.
+# Based on 'Events per variable (EPV) and the relative performance of different strategies for estimating the out-of-sample validity of logistic regression models.' Austin & Steierberg (2017)
+
+
+### Now Investigate relationships between response and numeric variables 
+
+# PriceCH
+
+OJ_priceCH <- 
+  ggplot(OJ, aes(x = Purchase, y = PriceCH, color = SaleType))+ 
+  geom_violin()+
+  ylab("Base Price of Citrus Hill")+
+  xlab("OJ Brand Purchased")+
+  ggtitle("How Base Price of Citrus Hill (Brand 0) Impacted Purchases                         
+  Compared to Minute Maid (Brand 1) Based On Sale Types 
+                  (0 = None, 1 = CH Only, 2 = MM Only)")+
+  scale_color_manual(values = color_blind_friendly2, name = "Sale Type")+
+  theme_classic()
+
+OJ_priceCH
+
+# Unsurprisingly, the cheaper the base price, the more often individuals purchased Citrus Hill. However, around 1.85, it seems Citrus Hill is greatly preferred to Minute Maid. As base price increases though, Minute Maid is slightly more preferred. 
+
+# PriceMM VS PriceCH by Purchase
+
+OJ_prices_purchase <- 
+  ggplot(OJ, aes(x = PriceCH, y = PriceMM, color = Purchase))+
+  geom_point(position = position_jitter(w = 0.1, h = 0.1))+
+  ylab("Base Price of Minute Maid")+
+  xlab("Base Price of Citrus Hill")+
+  ggtitle("Base Price of Minute Maid (Brand 1) vs Citrus Hill (Brand 0)
+with Final Customer Purchase for Orange Juice At 5 Stores")+
+  scale_color_manual(values = color_blind_friendly, name = "Brand")+
+  theme_classic()
+  
+OJ_prices_purchase
+
+# It does NOT appear that base prices significantly impact which brand is purchased more often. This is not that surprising, as customers likely purchase the brand they prefer based solely on base asking prices when shopping.
+
+# PriceCH vs DiscountMM
+
+OJ_priceCH_discountMM <- 
+  ggplot(OJ, aes(x = DiscMM, y = PriceCH, color = Purchase))+
+  geom_point(position = position_jitter(w = 0.05, h = 0.05))+
+  ylab("Base Price of Citrus Hill")+
+  xlab("Discount on Minute Maid")+
+  ggtitle("Base Price of Citrus Hill (Brand 0) vs Discount Offered on Minute 
+Maid (Brand 1) with Final Customer Purchase for Orange Juice")+
+  scale_color_manual(values = color_blind_friendly, name = "Brand")+
+  theme_classic()
+
+OJ_priceCH_discountMM
+
+# We see here that when there is no discount on Minute Maid, the Purchases are jumbled as expected. Custmers are simply choosing Minute Maid or Citrus Hill based on preference at this point. For sales where there was a discount offered on Minute Maid, the preferences remain consistent up until about the 0.75 mark. At this point, many more customers purchase Minute Maid as the extreme sale price seems to draw them in. 
+
+# PriceMM VS DiscountCH
+
+OJ_priceMM_discountCH <- 
+  ggplot(OJ, aes(x = DiscCH, y = PriceMM, color = Purchase))+
+  geom_point(position = position_jitter(w = 0.05, h = 0.05))+
+  ylab("Base Price of Minute Maid")+
+  xlab("Discount on Citrus Hill")+
+  ggtitle("Base Price of Minute Maid (Brand 1) vs Discount Offered on Citrus
+Hill (Brand 0) with Final Customer Purchase for Orange Juice")+
+  scale_color_manual(values = color_blind_friendly, name = "Brand")+
+  theme_classic()
+
+OJ_priceMM_discountCH
+
+# In this case, the initial jumbling remains the same, but the switch in customer preference occurs at a much lower price than with Minute Maid. Now, when the Discount on Citrus Hill is only about .20 cents, the sale drives customers to purchase Citrus Hill over Minute Maid. This suggests that Citrus Hill is either viewed as a higher quality product or is sold at a much lower price that any sale extremely impacts its purchase. Regardless, this indicates that DiscCH will have a significant impact on the predictions from our final model. 
+
+# Investigate range of base prices for the two brands
+
+Brand <- c("Citrus Hill", "Minute Maid")
+Max_CH <- max(OJ$PriceCH)
+Min_CH <- min(OJ$PriceCH)
+Mean_CH <- round(mean(OJ$PriceCH),2)
+Mean_Sale_CH <- round(mean(OJ$DiscCH),2)
+Max_MM <- max(OJ$PriceMM)
+Min_MM <- min(OJ$PriceMM)
+Mean_MM <- round(mean(OJ$PriceMM), 2)
+Mean_Sale_MM <- round(mean(OJ$DiscMM),2)
+
+
+CH_summary <- cbind(Max_CH, Min_CH, Mean_CH, Mean_Sale_CH)
+MM_Summary <- cbind(Max_MM, Min_MM, Mean_MM, Mean_Sale_MM)
+
+BasePrices <- rbind(CH_summary,MM_Summary)
+
+BasePrices <- as.data.frame(cbind(Brand, BasePrices))
+
+BasePrices <- BasePrices %>% 
+  rename(
+    Brand = Brand,
+    MaxPrice = Max_CH,
+    MinPrice = Min_CH,
+    MeanPrice = Mean_CH,
+    MeanDiscount = Mean_Sale_CH
+    )
+
+knitr::kable(BasePrices, "simple")
+
+# Investigation Shows that its likely Citrus Hill is sold at a much lower price that any sale extremely impacts its purchase. The mean sale price for the brand is already 22 cents cheaper than Minute Maid!
+
+# Plot LoyalCH With PriceMM For SaleMM cases
+
+OJ_saleMM <- OJ %>% filter(SaleType == 2)
+
+OJ_loyaltyCH_discountMM <- 
+  ggplot(OJ_saleMM, aes(x = DiscMM, y = LoyalCH, color = Purchase))+
+  geom_point(position = position_jitter(w = 0.05, h = 0.05))+
+  ylab("Lyalty to Citrus Hill")+
+  xlab("Discount off Minute Maid")+
+  ggtitle("How Loyalty to Citrus Hill (Brand 0) Affects Final Customer 
+Purchases When Minute Maid (Brand 1) is on Sale")+
+  scale_color_manual(values = color_blind_friendly, name = "Brand")+
+  theme_classic()
+
+OJ_loyaltyCH_discountMM
+
+# We see clearly that regardless of how much Minute Maid is on sale, when loyalty to Citrus Hill is near 0.75, the customers will predominantyly purchase Citrus Hill. However, a loyalty below that mark will typically lead to Minute Maid purchases if there is a discount. Therefore, a higher loyalty rating should result in predictions of Citrus Hill in our model. 
+
+```
+
+### Exploratory Data Analysis
+
+####### Variable Selection
+```{r, warning = FALSE, echo = FALSE, fig.height = 7, fig.width = 16}
+M <- cor(OJ_numeric)
+
+col <- colorRampPalette(c("#BB4444", "#EE9988", "#FFFFFF", "#77AADD", "#4477AA"))
+corrplot(M, method="color", col=col(200),  
+         type="upper", order="hclust", 
+         addCoef.col = "black", # Add coefficient of correlation
+         tl.col="black", tl.srt=45, #Text label color and rotation
+         # hide correlation coefficient on the principal diagonal
+         diag=FALSE 
+         )
+```
+
+The initial dataset contained 1070 observations for 18 variables and did not contain any missing values. The variables included: Purchase, WeekofPurchase, StoreID, PriceCH, PriceMM, DiscCH, DiscMM, SpecialCH, SpecialMM, LoyalCH, SalePriceMM, SalePriceCH, PriceDiff, Store7, PctDiscMM, PctDiscCH, ListPriceDiff, and STORE. Five were categorical: Purchase, StoreID, SpecialCH, SpecialMM, and STORE. The variable of interest, Purchase, was changed from "CH" and "MM" to 0 and 1 respectively for easier use with logistic regression. Of the 1070 purchases, 653 were CH and 417 were MM. 
+
+To eliminate redundancy by identifying relationships between variables a correlation matrix was made (above). Blue colors with positive numbers represent positive relationships while red colors with negative numbers represent negative relationships. Essentially, the darker the color, the stronger the relationship between two variables. When a relationship either >= 0.7 or <= -0.7 exists, the variables are redundant. Therefore, one of the variables should be removed. For our variables this included: PriceCH : WeekofPurchase = 0.704, PriceDiff : SalePriceMM = 0.853, DiscMM : SalePriceMM = -0.847, PctDiscMM : SalePriceMM = -0.857, PctDiscCH : SalePriceCH = -0.723, DiscCH : SalePriceCH = -0.711, DiscMM : PriceDiff = -0.824, PctDiscMM : PriceDiff = -0.828, PctDiscCH : DiscCH = 0.999,  and PctDiscMM : DiscMM = 0.999. Additionally, ListPriceDiff and PriceMM had a correlation of 067, which was deemed near enough to the threshold.
+
+As a result, the variables PctDiscCH/PctDiscMM, SalePriceCH/SalePriceMM, and PriceDiff were removed because we know have discounted price amounts DiscCH/DiscMM. Additionally, WeekofPurchase was removed because PriceCH and ListPriceDiff because of PriceMM. Next, the categorical variables Store7 and STORE were removed because StoreID was indicative of the information they provided. Meanwhile, SpecialCH and SpecialMM were combined into SaleType, which indicated whether neither brand was on special (0), the special was ONLY on CH (1) or the special was ONLY on MM (2). The case where a discount was offered on both brands (3) was discarded because it occurred only 4 times in stores where only MM was on sale! Therefore, this indicated a data entry error and these rows were discarded.
+
+####### Relationship Analysis
+
+```{r, echo = FALSE, fig.width = 12, fig.height = 4}
+# PriceCH
+
+# Plot LoyalCH With PriceMM For SaleMM cases
+
+# PriceCH vs DiscountMM
+
+# PriceMM VS DiscountCH
+
+grid.arrange(OJ_priceCH_discountMM, OJ_priceMM_discountCH, ncol = 2)
+knitr::kable(BasePrices, "simple")
+grid.arrange(OJ_priceCH, OJ_loyaltyCH_discountMM, ncol = 2)
+```
+
+To investigate our variables impact on the brand of orange juice purchased, and ultimately how they may influence our predictions/interpretations, exploratory tables and plots were made. First, scatterplots of the base listing price of one brand vs discount price of the other brand were made (Top Left & Right). In both cases, when there was no sale on the other brand (x-axis = 0), the opposite brand's base price had no effect on customer purchases. This indicates that when there are no sales, customers likely purchase the brand they prefer. However, when there was a discount on MM (Top Left), customers purchased that brand more often regardless of CH base price, if the discount was greater than around 0.75 cents. Meanwhile, when there was a discount on CH (Top Right), customers purchased that brand more often regardless of MM base prices, if the discount was greater than around 0.20 cents.
+
+This suggests that CH is either viewed as a higher quality product or is sold at a much lower price that any sale extremely impacts its purchase. However, a summary table (middle) provides support to the later theory. The mean sale price for CH is 22 cents cheaper than MM and CH has a maximum base value of only 2.09 compared to 2.29 for MM. Therefore, DiscCH should have a significant impact on our predictions/interpretations.
+
+Next, a violin plot (Bottom Left) shows the base price of CH versus which brand was purchased based on the sale type for that observation. We see that when the base price of CH is high and there are no sales for either brand (Sale Type = 0), customers purchase CH and MM about the same. When he base price is moderately low (below 1.9) and there are no sales, customers perhaps slightly favor MM. However, if the base price of CH is below 1.90 and there is a sale on CH (Sale Type = 1), customers tend to favor buying MM. While this might be unexpected, we know that the base price of CH is on average 22 cents below MM, so when a store runs a sale on CH with an already moderately low base price, customers perhaps view the product as inferior to the more "luxurious" MM. The fact that CH sales are higher than MM when CH base prices are above 1.90 supports this idea. Lastly, when the base price of CH is above 1.80 and there is a sale on MM, buyers slightly favor CH. This might suggest that a sale on MM brings the cost close to the base price of CH when it is above 1.80, where customers purchase CH because it is viewed as a better deal. Overall, we would expect our predictions/interpretations to mirror these findings moving forward.
+
+Finally, a scatterplot of the loyalty to CH versus the discount sale price of MM shows that if the customer loyalty to CH is above 0.75 (75%), they will likely purchase CH regardless of how much MM is discounted. However, a value below that threshold would indicate the customer will likely purchase MM if the product is discounted at all. When no discount exists for MM, a loyalty of only about 0.50 (50%) or greater typically indicates the customer will purchase CH. Thus, high loyalty ratings should lead to predictions/interpretations where CH is preferred, especially in the case where there is not a sale on MM.  
+
+
+
+```{r, echo = FALSE, include = FALSE}
+
+###### Training Set Classification
+
+
+OJ_minutemaid <- OJ
+
+# Partition 60/40 Split
+set.seed(3)
+train.index <- createDataPartition(OJ_minutemaid$Purchase, p = .6,
+                                   list = FALSE, times = 1)
+train.df <- OJ_minutemaid[train.index, ]
+test.df <- OJ_minutemaid[-train.index, ]
+
+# normalize predictors
+
+std.values <- preProcess(train.df, method=c("center","scale")) 
+train.std.df <- predict(std.values, train.df)
+
+# fit the logistic regression model
+OJmodel.1 <- glm(Purchase ~ ., 
+             data=train.std.df, family="binomial")
+
+
+
+# compute predicted probabilities
+pred1 <- predict(OJmodel.1, newdata=train.std.df, type="response")
+
+# find the optimal cutoff threshold
+
+opt.cut1 <- optimalCutoff(actuals=train.std.df$Purchase,
+              predictedScores=pred1, 
+              optimiseFor="misclasserror", returnDiagnostics=TRUE)
+
+# print output to screen
+paste("Optimal Cutoff Threshold =", round(opt.cut1$optimalCutoff,3))
+
+# Predictions On Train
+pred.class.opt.train <- ifelse(pred1 > opt.cut1$optimalCutoff, 1, 0)
+
+# make new confusion matrix using optimal cutoff
+cmat.opt.train <- caret::confusionMatrix(as.factor(pred.class.opt.train),
+                          as.factor(train.std.df$Purchase),
+                          positive="1")
+
+Confusion_Train <- cmat.opt.train$table
+cmat.opt.train
+Accuracy_Train <- 0.8424
+Accuracy_Table_Train <- table(pred.class.opt.train,train.df$Purchase)
+OJM1_Summary <- summary(OJmodel.1)
+
+
+
+```
+
+```{r, echo = FALSE, include = FALSE}
+# Validation Set Predictions
+
+# Standardize Predictors
+
+std.values <- preProcess(test.df, method=c("center","scale")) 
+test.std.df <- predict(std.values, test.df)
+
+# compute predicted probabilities
+pred2 <- predict(OJmodel.1, newdata=test.std.df, type="response")
+
+pred.class.opt2_test <- as.factor(ifelse(pred2 > opt.cut1$optimalCutoff, 1, 0))
+
+# make new confusion matrix using optimal cutoff
+cmat.opt2_test <- caret::confusionMatrix(pred.class.opt2_test,
+                          as.factor(test.std.df$Purchase),
+                          positive="1")
+
+Test_Confusion <- cmat.opt2_test$table
+Accuracy_Test <- 0.8269
+NIR_Test <- 0.6094
+Sensitivity_Test <- 0.7831
+Specificity_Test <- 0.8533
+Accuracy_Table_Test <- table(pred.class.opt2_test,test.df$Purchase)
+MostPrevelance_Test <- "CH"
+Prevelance <- 259
+Num_Test <- length(test.df$Purchase)
+
+Validation_Results <- as.data.frame(cbind(Accuracy_Test, NIR_Test, Sensitivity_Test, Specificity_Test, MostPrevelance_Test, Prevelance, Num_Test))
+
+Validation_Results
+
+Validation_Results <- Validation_Results %>% 
+           rename("Test Accuracy" = "Accuracy_Test",
+           "No Information" = "NIR_Test", "Sensitivity" = "Sensitivity_Test", "Specificity" = "Specificity_Test", "Most Prevelant" = "MostPrevelance_Test", "Total Values" = "Num_Test")
+
+Validation_Results
+
+```
+
+### Purchasing
+
+Here, we produce a logistic regression model with the goal of accurately predicting whether a customer purchased MM orange juice based on the non-excluded variables outlined in the previous section. 
+
+
+```{r, echo = FALSE, fig.width = 7, fig.height = 4}
+
+draw_confusion_matrix_train <- function(cm) {
+
+  total <- sum(cm$table)
+  res <- as.numeric(cm$table)
+
+  # Generate color gradients. Palettes come from RColorBrewer.
+  greenPalette <- c("#F7FCF5","#E5F5E0","#C7E9C0","#A1D99B","#74C476","#41AB5D","#238B45","#006D2C","#00441B")
+  redPalette <- c("#FFF5F0","#FEE0D2","#FCBBA1","#FC9272","#FB6A4A","#EF3B2C","#CB181D","#A50F15","#67000D")
+  getColor <- function (greenOrRed = "green", amount = 0) {
+    if (amount == 0)
+      return("#FFFFFF")
+    palette <- greenPalette
+    if (greenOrRed == "red")
+      palette <- redPalette
+    colorRampPalette(palette)(100)[10 + ceiling(90 * amount / total)]
+  }
+
+  # set the basic layout
+  layout(matrix(c(1,1,2)))
+  par(mar=c(2,2,2,2))
+  plot(c(100, 345), c(300, 450), type = "n", xlab="", ylab="", xaxt='n', yaxt='n')
+  title('Table 1: Model Results for Predicting Training Orange Juice Data', cex.main=2)
+  # create the matrix 
+  classes = colnames(cm$table)
+  rect(150, 430, 240, 370, col=getColor("green", res[1]))
+  text(195, 435, classes[1], cex=1.2)
+  rect(250, 430, 340, 370, col=getColor("red", res[3]))
+  text(295, 435, classes[2], cex=1.2)
+  text(125, 370, 'Predicted', cex=1.3, srt=90, font=2)
+  text(245, 450, 'Actual', cex=1.3, font=2)
+  rect(150, 305, 240, 365, col=getColor("red", res[2]))
+  rect(250, 305, 340, 365, col=getColor("green", res[4]))
+  text(140, 400, classes[1], cex=1.2, srt=90)
+  text(140, 335, classes[2], cex=1.2, srt=90)
+  
+    # add in the cm results
+  text(195, 400, res[1], cex=1.6, font=2, col='white')
+  text(195, 335, res[2], cex=1.6, font=2, col='white')
+  text(295, 400, res[3], cex=1.6, font=2, col='white')
+  text(295, 335, res[4], cex=1.6, font=2, col='white')
+  
+  # add in the specifics 
+  plot(c(100, 0), c(100, 0), type = "n", xlab="", ylab="", main = "DETAILS", xaxt='n', yaxt='n')
+  text(30, 85, names(cm$byClass[1]), cex=1.2, font=2)
+  text(30, 70, round(as.numeric(cm$byClass[1]), 3), cex=1.2)
+  text(50, 85, names(cm$byClass[2]), cex=1.2, font=2)
+  text(50, 70, round(as.numeric(cm$byClass[2]), 3), cex=1.2)
+
+  # add in the accuracy information 
+  text(70, 85, names(cm$overall[1]), cex=1.2, font=2)
+  text(70, 70, round(as.numeric(cm$overall[1]), 3), cex=1.2)
+  
+  
+}
+
+Train_CM <- draw_confusion_matrix_train(cmat.opt.train)
+
+
+```
+
+```{r, echo = FALSE, fig.width = 7, fig.height = 4}
+
+# Test Data Conf Matrix Plot function
+
+draw_confusion_matrix_test <- function(cm) {
+
+  total <- sum(cm$table)
+  res <- as.numeric(cm$table)
+
+  # Generate color gradients. Palettes come from RColorBrewer.
+  greenPalette <- c("#F7FCF5","#E5F5E0","#C7E9C0","#A1D99B","#74C476","#41AB5D","#238B45","#006D2C","#00441B")
+  redPalette <- c("#FFF5F0","#FEE0D2","#FCBBA1","#FC9272","#FB6A4A","#EF3B2C","#CB181D","#A50F15","#67000D")
+  getColor <- function (greenOrRed = "green", amount = 0) {
+    if (amount == 0)
+      return("#FFFFFF")
+    palette <- greenPalette
+    if (greenOrRed == "red")
+      palette <- redPalette
+    colorRampPalette(palette)(100)[10 + ceiling(90 * amount / total)]
+  }
+
+  # set the basic layout
+  layout(matrix(c(1,1,2)))
+  par(mar=c(2,2,2,2))
+  plot(c(100, 345), c(300, 450), type = "n", xlab="", ylab="", xaxt='n', yaxt='n')
+  title('Table 2: Model Results for Predicting Test Orange Juice Data', cex.main=2)
+  # create the matrix 
+  classes = colnames(cm$table)
+  rect(150, 430, 240, 370, col=getColor("green", res[1]))
+  text(195, 435, classes[1], cex=1.2)
+  rect(250, 430, 340, 370, col=getColor("red", res[3]))
+  text(295, 435, classes[2], cex=1.2)
+  text(125, 370, 'Predicted', cex=1.3, srt=90, font=2)
+  text(245, 450, 'Actual', cex=1.3, font=2)
+  rect(150, 305, 240, 365, col=getColor("red", res[2]))
+  rect(250, 305, 340, 365, col=getColor("green", res[4]))
+  text(140, 400, classes[1], cex=1.2, srt=90)
+  text(140, 335, classes[2], cex=1.2, srt=90)
+
+
+  # add in the cm results
+  text(195, 400, res[1], cex=1.6, font=2, col='white')
+  text(195, 335, res[2], cex=1.6, font=2, col='white')
+  text(295, 400, res[3], cex=1.6, font=2, col='white')
+  text(295, 335, res[4], cex=1.6, font=2, col='white')
+  
+    # add in the specifics 
+  plot(c(100, 0), c(100, 0), type = "n", xlab="", ylab="", main = "DETAILS", xaxt='n', yaxt='n')
+  text(30, 85, names(cm$byClass[1]), cex=1.2, font=2)
+  text(30, 70, round(as.numeric(cm$byClass[1]), 3), cex=1.2)
+  text(50, 85, names(cm$byClass[2]), cex=1.2, font=2)
+  text(50, 70, round(as.numeric(cm$byClass[2]), 3), cex=1.2)
+
+  # add in the accuracy information 
+  text(70, 85, names(cm$overall[1]), cex=1.2, font=2)
+  text(70, 70, round(as.numeric(cm$overall[1]), 3), cex=1.2)
+  
+}
+
+Test_CM <- draw_confusion_matrix_test(cmat.opt2_test)
+```
+
+
+
+Logistic regression models work to produce a probability (or percentage if multiplied by 100) of success. Here, a success means a customer purchased MM. In order to do so, they require a binary outcome response (success or failure) where a success is represented as a 1 and failure by a 0. The formula for these models follows what is known as a sigmoid curve, which if plotted on a graph simply looks like an S-Shaped curve between 0 and 1 (y-axis) with probabilities on the x-axis. The formula for creating such a curve is $P = e^{a + bX ... bN} / (1 + e^{a + b1 ... bN})$, where P is the probability of success (P = 1), e is Euler's Constant, a is the slope of the model, and the b1 - bN represents each of the N predictor variables. Using this formula, we can find a probability of MM purchase for each of the observations in the OJ data, and then decide if the probability is high enough to be classified as an MM or low enough to be a CH purchase. This was done using an optimal cutoff for this analysis. Based on these classifications, we can compare against the actual known response values to get out models accuracy, which we use to determine its viability for future use.
+
+However, if we used all of our 1066 observations to build this model, then we would only be able to assess how accurate the model is on these particular datapoints, not any unseen data. Therefore, a validation approach, which involves taking all our data, splitting it into two groups, building our model based on one of the groups, and then assessing the model on the other group is used to avoid this limitation.
+
+The group used to build the model is known as the training set and the other group is called the test set. Though the amount of data assigned to each is subjective, typically more data is used in the training group. Ultimately, we assigned 65% of our data to the training group (641 observations) and 35% (425 observations) to the test group. Next, a data transformation, known as centering/scaling, was performed to get every value in the training and test sets on the same measurement range before building our model.
+
+Next, a probability of success was calculated for each row of the training data based on the coefficients and an optimal cutoff point was produced. This decides the minimum probability value at or above which a positive is classified. Our model value was 0.479 or 47.9%, so any probability lower than this value was predicted as failure (Customer Purchased CH) and any probability at or higher was predicted as success (Customer Purchased MM). 
+
+These decisions were then put into a table, known as a confusion matrix, to break down how accurate we were. Table 1 (Above: Top) shows these results and is read as follows:
+
+**The top two columns, 0 and 1, are the actual values in the training dataset and the side rows, 0 and 1, are the predicted values in the training dataset.**
+
+Summing down from the top we see that 390 observations were purchases of CH (343 + 47), and 251 observations were purchases of MM (54 + 197) in the training set. Likewise by summing the rows, we see that our model predicted 397 observations were CH purchases (343 + 54) and 244 were MM purchases (197 + 47). Based on this, we can find how well we predicted MM purchases by calculating accuracy. This value is simply **the number of predictions we got right divided by the total number of observations in our data**
+
+Following the confusion matrix, we find the total number of correct predictions by lining up the rows and columns. For example, column 0 lines up with the row 0 in Table 1 at the number 343 shown in green. We also see that column 1 and row 1 line up at 197 in green. Adding these two together we get 540, which is the total correct model predictions! By adding up the values in red, we find our total incorrect predictions at 101 (54 + 47). To find accuracy, we then take the correct predictions and divide by the sum of all values to get **540/641 = 0.8424 or 84.24%**. Ultimately, this tells us that for the training data, our model accurately predicts whether or not a customer purchases MM orange juice 84.24 percent of the time. 
+
+How do we know if this accuracy value is good? Besides using judgement to say that 84% seems decent, we can actually compare this to a value known as the No Information Rate. Looking at the training data we saw that 390 purchases were CH while only 251 were MM. Therefore, it is more likely that any given purchase was CH. Using this logic, we could randomly predict all of the 641 observations to be CH and 390 of 641 of our guesses would be correct. Therefore, we would have an Accuracy of **390/641 = 0.6084 or 60.84%**, which is the No Information Rate. Based on this, we see that our model predicts purchases accurately 23.4% better than randomly guessing, suggesting it does quite well overall.
+
+Although, every model is built using its own specific observations and thus we need to assess how they perform on new, unseen, data to truly measure performance. This is where a test set comes in handy. Using the same model coefficients from the training data, we now take the 425 test observations and predict the probability of success (MM purchase) again for them. After doing so, we use the same optimal cutoff as before to decide whether each observation was a CH or MM purchase. 
+
+We then follow the same procedures as before to produce a confusion matrix and reassess model accuracy. However, there is one caveat to this. Our model was fit with the training data, so we would expect that accuracy on test data would be less than with the training set. Although, if our accuracy is much lower, say 10% or more, we would be at risk of fitting too specifically to the training data. Put simply, our model would fail to account for the fact that every individual occurrence in the real-world is unique. Each shopping trip and customer is different than the last, and thus purchases will change based on this individuality. When models are too specific, they neglect this fact, and thus their accuracy on data not used to build them is very poor. 
+
+In our case, the test set confusion matrix can be seen in Table 2 (Above: Bottom). Reading like before, we see that the model predicted 351 of 425 observations correctly for the test set. Ultimately, this resulted in a **Test Accuracy = 0.8269 or 82.69%**, which was less than the **Training Accuracy = 0.8424 or 84.24%** as expected, but not so much less that we are concerned with overfitting. Now, we make the ultimate assessment of how well our model performed by comparing the Test Accuracy to the **Test No Information Rate = 0.6094 or 60.94%**. Again, the model performs quite well, as it predicts the test purchases accurately 21.75% more often than randomly guessing. 
+
+We can see in both Table 1 and 2 our accuracy values along with two additional estimates in Sensitivity and Specificity. On some occasions, we might be concerned with how well we can predict a "Yes" case or perhaps how well we can predict a "No" case. For this, we rely on Sensitivity and Specificity. Sensitivity is when we are interested in predicting the "Yes" category. A model is highly sensitive when it predicts the TRUE "Yes" category well, thus avoiding falsely predicting a "No" when the true value was "Yes". The opposite is true with specificity. A model is highly specific when it predicts the TRUE "No" values well, thus avoiding falsely predicting a "Yes" when the true value was "No". Typically, there is a tradeoff in sensitivity and specificity. Overall, our model was **more specific at 0.8533 or 85.33 (221/(221 + 38))** than it was sensitive **0.7831 or 78.31% (130/(130+36))** for the test data. 
+
+Overall, this model does an adequate job at predicting orange juice purchases for customers in our dataset, and it shows how powerful predictive modeling can be in a real-world setting. Clearly, an approach like this could prove beneficial for our stores by producing purchasing predictions we could use to target specific customers in our advertising.
+
+### Marketing
+
+Here, we attempt to produce a Logistic Regression Model that best explains preferences among customers who purchased MM. Therefore, model selection criterions AIC and McFadden's Pseudo R^2 were used to justify decisions among 5 plausible models. Finally, the "best" model was explained by utilizing its coefficients and p-values to explain the relationships, if any, between our predictors and the success response category Purchase = MM.
+
+
+```{r, include = FALSE, echo = FALSE}
+### Three Plausible Models:
+
+#1. A Simple Model using only: LoyalCH 
+
+m1_OJ <- glm(Purchase ~ LoyalCH, data = OJ, family = "binomial")
+
+#2 A model using only MM labeled variables: PriceMM, DiscMM
+
+m2_OJ <- glm(Purchase ~ PriceMM + DiscMM, data = OJ, family = "binomial")
+
+#3. A model using ONLY variables associated with Purchasing From Exploratory Analysis WITHOUT the categorical predictor SaleType: 
+
+# DiscMM, DiscCH, LoyalCH
+
+m3_OJ <- glm(Purchase ~ DiscMM + DiscCH + LoyalCH, data = OJ, family = "binomial")
+
+#4. A model using ONLY variables associated with Purchasing From Exploratory Analysis WITHOUT the categorical predictor SaleType: 
+
+# DiscMM, DiscCH, LoyalCH, SaleType
+
+m4_OJ <- glm(Purchase ~ DiscMM + DiscCH + LoyalCH + SaleType, data = OJ, family = "binomial")
+
+
+#5. The modeling using all predictors as was used in modeling for predictions
+
+m5_OJ <- glm(Purchase ~ ., data = OJ, family = "binomial")
+```
+
+```{r, echo = FALSE}
+### Define Models
+m1 <- "Model 1"
+m2 <- "Model 2"
+m3 <- "Model 3"
+m4 <- "Model 4"
+m5 <- "Model 5"
+
+Model <- rbind(m1, m2, m3, m4, m5)
+
+### Define Their Structure
+
+S1 <- "Purchase ~ LoyalCH"
+S2 <- "Purchase ~ PriceMM + DiscMM"
+S3 <- "Purchase ~ DiscMM + DiscCH + LoyalCH"
+S4 <- "Purchase ~ DiscMM + DiscCH + LoyalCH + SaleType"
+S5 <- "Purchase ~ ."
+
+Structure <- rbind(S1, S2, S3, S4, S5)
+
+### Make Data Frame
+
+Model_Structure <- as.data.frame(cbind(Model, Structure))
+
+### Make Table 
+
+Model_Structure <- Model_Structure %>% rename(Model = V1 , Structure = V2)
+
+knitr::kable(Model_Structure, "simple", caption = "Plausible Logistic Regression Models Considered for the OJ Dataset")
+
+```
+
+Above, the five Logistic Regression models considered are shown with the format Response ~ Predictors. The first model utilized only customer loyalty to CH as a predictor because LoyalCH showed a very strong relationship to purchases in exploratory analysis. The second model used only variables measuring MM: base price MM and discount MM as it is plausible CH provides no informaton on MM purchases. The third model uses the three numeric predictors that showed a clear relationship with MM during data eploration: DiscMM, DiscCH, and LoyalCH without the categorical predictor SaleType. The fourth model used all variables analyzed in exploratory analysis with the catefoical predictor: DiscMM, DiscCH, LoyalCH, SaleType. Finally, every predictor could be important in explaining an MM purchase, so model five was built with: DiscMM, DiscCH, LoyalCH, SaleType, PriceMM, PriceCH, and StoreID.
+
+
+```{r, echo = FALSE, include = FALSE}
+
+### Model Selection Via AIC and R^2
+m1_AIC <- extractAIC(m1_OJ, k=2)
+m2_AIC <- extractAIC(m2_OJ, k=2)
+m3_AIC <- extractAIC(m3_OJ, k=2)
+m4_AIC <- extractAIC(m4_OJ, k=2)
+m5_AIC <- extractAIC(m5_OJ, k=2)
+
+AICs <- rbind(m1_AIC, m2_AIC, m3_AIC, m4_AIC, m5_AIC)
+
+### Comparison With R^2
+m1_R2 <- PseudoR2(m1_OJ, which="McFadden") 
+m2_R2 <- PseudoR2(m2_OJ, which="McFadden") 
+m3_R2 <- PseudoR2(m3_OJ, which="McFadden") 
+m4_R2 <- PseudoR2(m4_OJ, which="McFadden") 
+m5_R2<- PseudoR2(m5_OJ, which="McFadden")
+
+Pseudo_Rs <- rbind(m1_R2, m2_R2, m3_R2, m4_R2, m5_R2)
+```
+
+
+```{r, echo = FALSE}
+OJ_ModelComparisons <- as.data.frame(cbind(Model, AICs, Pseudo_Rs))
+
+OJ_ModelComparisons <- OJ_ModelComparisons %>% rename(Model = V1 , AIC = V3, `McFaddens_R^2` = McFadden)
+
+OJ_ModelComparisons$AIC <- as.numeric(OJ_ModelComparisons$AIC)
+OJ_ModelComparisons$`McFaddens_R^2` <- as.numeric(OJ_ModelComparisons$`McFaddens_R^2`)
+
+OJ_ModelComparisons <- OJ_ModelComparisons %>% mutate(AIC = round(AIC, 2), `McFaddens_R^2` = round(`McFaddens_R^2`, 2)) %>% dplyr::select(-V2)
+
+knitr::kable(OJ_ModelComparisons, "simple", caption = "Comparison Statistics For Five Plausible OJ Models")
+```
+
+Above, Akaike's Information Criterion (AIC) and McFadden's Pseudo R-Squared values used to compare fit to the OJ dataset are shown. In AIC, we observed that models 3, 4 and 5 had a clear separation from models 1 and 2. Their AIC values of 858.93, 859.50 and 842.95 respectively were much lower than the first two model, and thus their prediction error is estimated to be best. In addition, the McFadden Pseuod R^2 estimates for models 3, 4, and 5 were also much higher than the first two models at 0.40, 0.41 and 0.43 respectively. Therefore, models 1 and 2 were dropped from consideration at this point. However, it should be noted model 2 using only variables measuring MM had an extremely high AIC of 1376.98 and low McFadden's R^2  of 0.04, which indicates knowing information on CH is important for predicting/explaining purchases of MM.
+
+When deciding between models 3, 4, and 5, the expectations of explanatory modeling had to be considered. While Model 5 technically had the best overall performance in AIC and R^2 measures, it was considerably more complex than models 3 and 4. As a result, the standard errors could be inflated, indicating the simpler models 3 and 4 would be a better choice. In addition, the improvement in AIC and R^2 were both minor for this model, so it was dropped from consideration. Between the final two models, we observed a lower AIC in model 3 at 858.93 with a lower R^2 of 0.40. Although, the two values were extremely similar to model 4 at 859.50 and 0.41 respectively. Ultimately, model 3 without the categorical predictor, SaleType, was chosen because it decreased the complexity of explanations significantly while providing essentially the same or better information than model 4.
+
+
+```{r, echo = FALSE, include = FALSE}
+summary(m3_OJ)
+
+exp(confint(m3_OJ, level=0.95))
+
+Intercept_Converted <- exp(2.7067)
+LoyalCH_Converted <- exp(-6.3607)^(0.1)
+DiscMM_Converted <- exp(2.6454)^(0.1)
+DiscCH_Converted <- exp(-3.8949)^(0.1)
+
+
+lowerCI_DiscMM <- (6.389335)^0.1
+UpperCI_DiscMM <- (31.91069424)^0.1
+lowerCI_DiscCH <- (0.003584489)^0.1
+UpperCI_DiscCH <- (0.10149272)^0.1
+lowerCI_LoyalCH <-(0.0007901217)^0.1
+UpperCI_LoyalCH <- (0.00357968)^0.1
+
+
+Predictor <- c("Intercept", "DiscMM", "DiscCH", "LoyalCH")
+Estimate <- round(c(Intercept_Converted, DiscMM_Converted, DiscCH_Converted, LoyalCH_Converted),4)
+Standard_Error <- c(0.2111, 0.4098, 0.8492, 0.3849)
+P_Value <- c(2e-16, 1.07e-10, 4.50e-06, 2e-16)
+Significant <- c("Yes", "Yes", "Yes", "Yes")
+Lower_95_CI <- c(1.003e+01, round(lowerCI_DiscMM, 4), round(lowerCI_DiscCH, 4), round(lowerCI_LoyalCH, 4))
+Upper_95_CI <- c(22.958,  round(UpperCI_DiscMM, 4),  round(UpperCI_DiscCH, 4), round(UpperCI_LoyalCH, 4))
+
+OJ_FinalModel <- as.data.frame(cbind(Predictor, Estimate, Standard_Error, P_Value, Significant, Lower_95_CI, Upper_95_CI))
+
+```
+
+```{r, echo = FALSE}
+knitr::kable(OJ_FinalModel, "simple", caption = "Key Model Outputs for the Best OJ Explanatory Logistic Regression Model")
+```
+
+The summary table above breaks down the significant outputs from our best model, and includes a 95% confidence interval lower/upper bound for the coefficient estimates. Though included in the table for reference, the intercept will not be interpreted. Overall, we observe that all three explanatory variables: DiscMM, DiscCH, LoyalCH have extremely significant P-Value estimates at 1.07e-10, 4.50e-06, and 2e-16 respectively. We also see that the standard error estimates for our three predictors are very small relative to the coefficient estimates, which explains why our P-Values are so significant when derived from a Z-Distribution using **Z = estimate/standard error**. 
+
+Here, an interpretation of each coefficient estimate and 95% Confidence Interval associated with that estimate will be provided in the context of the predictor and response variables. Note that these variables represent either a cents increase/decrease or a proportion, so we must convert from a "One Unit" change to a more interpretable change like 0.1 ($0.10 cents or 10%) by raising each exponentiated coefficient estimate to the 0.1 power.
+
+**DiscMM: For each 0.1 unit increase in discount of Minute Maid OJ, the odds of a customer purchasing MM are multiplied by a factor of 1.302832 given all other predictors are held constant. We are 95% confident that the odds of a customer purchasing MM are multiplied by a factor of between 1.2038 and 1.4138 for each 0.1 unit increase in discount of Minute Maid given all other predictors are held constant.**
+
+**DiscCH: For each 0.1 unit increase in discount of Citrus Hill OJ, the odds of a customer purchasing MM are multiplied by a factor of 0.6774023 given all other predictors are held constant. We are 95% confident that the odds of a customer purchasing MM are multiplied by a factor of between 0.5694 and 0.7955 for each 0.1 unit increase in discount of Citrus Hill given all other predictors are held constant.**
+
+**LoyalCH: For each 0.1 unit increase in the proportion of customer loyalty to Citrus Hill OJ, the odds of a customer purchasing MM are multiplied by a factor of 0.5294 given all other predictors are held constant. We are 95% confident that the odds of a customer purchasing MM are multiplied by a factor of between 0.4895 and 0.5694 for each 0.1 unit increase in the proportion of customer loyalty to CH given all other predictors are held constant.**
+
+```{r, echo = FALSE, include = FALSE}
+### Marginal Effect Plot DiscMM
+
+MarEff_DiscMM <- plot_model(m3_OJ, type = "pred", terms = c("DiscMM"), color = "blue", title = "Marginal Effect of Discount Price of Minute Maid OJ 
+  on Customer Purchases of Minute Maid OJ")
+
+### Marginal Effect Plot DiscCH
+
+MarEff_DiscCH <- plot_model(m3_OJ, type = "pred", terms = c("DiscCH"), color = "blue", title = "Marginal Effect of Discount Price of Citrus Hill OJ 
+ on Customer Purchases of Minute Maid OJ")
+
+### Marginal Effect Plot LoyalCH
+
+MarEff_LoyalCH <- plot_model(m3_OJ, type = "pred", terms = c("LoyalCH [all]"), color = "blue", title = "Marginal Effect of Loyalty to Citrus Hill OJ on Customer Purchases of Minute Maid OJ")
+
+```
+
+
+```{r, fig.height = 6, fig.width = 13, echo = FALSE}
+grid.arrange(MarEff_DiscCH, MarEff_DiscMM, MarEff_LoyalCH, ncol = 2, nrow = 2)
+```
+
+Above, marginal effect plots for each explanatory variables are shown. These plots allow us to visualize the predicted probabilities (shown as percents) of a customer purchasing MM based on the range of values of each predictor from our model. The plots functionally hold all other predictors constant at their mean. Overall, we see that any discount on CH (Top Left) essentially yields an extremely small chance of a customer purchasing MM, as values after 0% have probabilities less than 0.45. For LoyalCH (Bottom Left), it appears that a 0.50 threshold is an indicator of customers preferring CH to MM. However, any loyalty to CH does lower the chances of an MM purchase. Finally, there is a steady increase in the probability of a customer purchasing MM when it is discounted (Top Right). Around a discount of 0.40, the purchase becomes much more likely to be MM, as the predicted success probability passes 50%.  
+
+Ultimately, based on this exploration, we can reasonably say discounts on Minute Maid and Citrus Hill along with customer loyalty to Citrus Hill are key indicators of MM customer purchasing habits. In an attempt to increase the proportion of customers purchasing MM in our store, we could consider the following marketing approaches: Increase the discount price of MM to a minimum of 0.40 cents, refrain from offering discounts on CH brands altogether, and attempt to steer customer loyalty away from CH and towards MM by perhaps offering rewards or benefits to those who purchase MM. 
+
+### Summary and Recommendations
+
+In this analysis, we sought to find valuable insights into reliably classifying and interpreting customer purchases of a convenience store product so that we could use a similar approach for products of interest in our Grab-n-Go stores.To find these insights, we used logistic regression modeling for prediction and interpretation based on data regarding the Orange Juice brands Citrus Hill and Minute Maid. 
+
+For prediction, we produced a model with 82.69% accuracy when predicting an MM or CH purchase. This model performed much better than randomly guessing each new data point to be the majority class, which yielded an accuracy of 60.94%. Therefore, we confirmed that the model we built was reasonable for prediction. In general, the process of creating such a model involved estimating the probability of a purchase based on all the variables remaining after exploratory data analysis. Going forward, if we wish to predict different product purchases accurately based on customer data, then we should first limit the data to only important variables with such an analysis before fitting the model with the remaining variables. Following this, we suggest using a training/test split to find overall accuracy for justifying a model's use in prediction. If the model performs poorly, then we recommend trying different variable combinations with train/test splits until a justifiable model is reached. Then, our company could take information on new customers, plug them into the model to receive a purchase prediction, and finally build targeted advertisements based on the prediction outcomes. 
+
+For interpretation, we observed how we can use model comparison methods to decide which variables are most important to a model. By using these techniques, we were able to narrow in on a "best" model, which we used for interpreting how our variables related to an orange juice purchase of MM. For our Grab-n-Go stores, we recommend using a similar approach when using new customer data to identify purchases for a product of interest. By doing so, we can identify exactly how we expect our customers to act based on the most important variables we are measuring. As a result, we could then further build our targeted advertisements based on these interpretations.
+
+Overall, we showed just how powerful modeling for prediction and interpretation can be in the grocery store industry. For Grab-n-Go, our results should help to maximize profits and increase advertising efficiency in the future.
+
+
