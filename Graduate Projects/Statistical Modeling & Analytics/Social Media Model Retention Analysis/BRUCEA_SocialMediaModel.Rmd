@@ -1,0 +1,386 @@
+---
+title: "Social Media Posting Model User Analysis"
+author: "Adam Bruce"
+date: "`r Sys.Date()`"
+output: word_document
+fontsize: 12pt
+---
+
+```{r, include = FALSE}
+library(DMwR2)
+library(ggplot2)
+library(datasets)
+library(dplyr)
+library(knitr)
+library(datasets)
+library(tidyverse)
+library(tibble)
+library(ggformula)
+library(readr)
+library(gapminder)
+library(MASS)
+library(mosaicData)
+library(pROC)
+library(ggthemes)
+library(vcd)
+library(gridExtra)
+library(kableExtra)
+
+
+
+platform_retention <- read_csv("~/Desktop/DS705 Statistical Methods/Project 1/platform_retention.csv")
+
+sum(is.na(platform_retention$retention_1)) + sum(is.na(platform_retention$retention_7))
+```
+
+### Data Background 
+
+The data set `platform_retention.csv` used in this analysis contains data on a sample of new users of the social media platform. Collectively, users were assigned to one of two user engagement model groups. These included either unlimited, the companies current model, or limited posting groups.
+
+Primarily, this study aims to identify whether limiting user posts increases 7-day retention when compared to the unlimited posting model currently used. However, we also investigate if, between each model, site visits by day 7 vary, 1-day retention vary, or if other relationships among recorded variables exist and warrant further testing going forward.  
+
+### Exploratory Analysis
+
+In total, 4,516 users were missing data on their retention after one and seven days. It is impossible to infer retention for these users, so they were dropped from final analysis. The result was 85,673 users to study.
+
+### Investigation: Does limiting user posts increases 7-day retention when compared to the unlimited posting model?
+
+```{r, include = FALSE}
+color_blind_friendly <- c("#CC7917", "#0072B2","#CC7917", "#0072B2")
+color_blind_fill <- c("#F0E442", "#CC79A7")
+
+platform_retention <- platform_retention %>% drop_na()
+
+platform_retention_unlimited <- platform_retention %>% filter(version == "unlimited")
+
+# Total = 43,168
+# True = 7,872
+# False = 35,296
+
+True_Perc_Unlimited = (7872/43167) * 100
+sum(platform_retention_unlimited$retention_7 == TRUE) 
+sum(platform_retention_unlimited$retention_7 == FALSE)
+
+platform_retention_limited <- platform_retention %>% filter(version == "limited")
+
+# Total = 42,505
+# True = 8,122
+# False = 34,383
+
+True_Perc_Limited <- (8122/42505) * 100
+sum(platform_retention_limited$retention_7 == TRUE) 
+sum(platform_retention_limited$retention_7 == FALSE)
+
+# True Percentage Unlimited = 18.25%
+# True Percentage Limited = 19.11%
+
+True_Perc_Unlimited
+True_Perc_Limited
+
+Platform_Segmentation <-
+  ggplot(platform_retention, aes(x = version ,fill = retention_7)) + 
+  geom_bar(position = "fill")+
+  ylab("Proportion of Users")+
+  xlab("Platform Version")+
+  ggtitle("Proportion of Users Retained or Unretained After 7
+    Days on Either Unlimited or Limited Platforms")+
+  scale_fill_manual(values = color_blind_friendly, name = "Retention")
+  
+
+Platform_Grouped <- 
+  ggplot(platform_retention, aes(version, ..count..))+ 
+  geom_bar(aes(fill = retention_7), position = "dodge")+
+  ylab("Number Retained")+
+  xlab("Platform Version")+
+  ggtitle("Number of Users Retained or Unretained After 7 
+    Days on Either Unlimited or Limited Platforms")+
+  scale_fill_manual(values = color_blind_friendly, name = "Retention")
+
+Platform_Perc_Table <- prop.table(table(platform_retention$retention_7, platform_retention$version), margin = 2) * 100
+
+Platform_Perc_Table <- round(Platform_Perc_Table, 2)
+```
+
+
+```{r, warning = FALSE, echo = FALSE, fig.width=10, fig.height = 5}
+grid.arrange(Platform_Segmentation, Platform_Grouped, ncol = 2)
+
+Platform_Perc_Table
+```
+A segmented bar plot (left) shows the proportion of the users within each platform group. The results show that a majority of individuals were not retained in both groups (retention = FALSE). Most importantly, the plot shows little difference in the limited and unlimited model retention after seven days. The same outcome is observed in the grouped bar plot (right). However, this plot shows the total number of users retained or unretained after seven days for each model. This plot is arguably better for explaining the small difference observed as a small gap between the "FALSE", unretained users can be seen. 
+
+Overall, the unlimited model does have a slightly higher percentage of users unretained at 81.76% compared to the limited model at 80.89%. Therefore, it is plausible that the new, limited model, could increase retention (TRUE = 19.11%) over the unlimited model (TRUE = 18.23%). Though, it seems unlikely given the large sample size and small difference in the groups.
+
+### Investigation: Does the number of site visits by day 7 differ between the two posting models?
+
+```{r, include = FALSE, echo = FALSE, warning = FALSE}
+
+# One extreme outlier at 49,859 in limited model. 7,122 visits per day is unreasonable? Data Error?
+
+max(platform_retention$site_visits_7)
+mean(platform_retention$site_visits_7)
+sum(platform_retention$site_visits_7 >= 5000)
+platform_reasonable <- platform_retention %>% filter(site_visits_7 <= 5000)
+
+
+## Boxplot
+
+Boxplot_Site_7 <- 
+  ggplot(platform_reasonable, aes(x = version, y = log(site_visits_7), color = version))+ 
+  geom_boxplot(size = 0.75, fill = color_blind_fill)+
+  ylab("Log Site Visits")+
+  xlab("Platform Version")+
+  ggtitle("Log Scaled Number of Site Visits by Users After 7 Days 
+            on Either Unlimited or Limited Platforms")+
+  scale_color_manual(values = color_blind_friendly, name = "Model Version")+
+  scale_fill_manual(values = color_blind_fill)+
+  theme_classic()
+  
+
+Boxplot_Site_7
+
+
+## Density Plots
+
+Histogram_Site_7 <- 
+  ggplot(platform_reasonable, aes(x = log(site_visits_7), fill = version))+ 
+  geom_histogram(alpha = 0.5, color = c("red"), position = "identity")+
+  ylab("Frequency")+
+  xlab("Log Site Visits")+
+  ggtitle("Log Scaled Frequencies of Site Visits by Users After 7 
+        Days on Either Unlimited or Limited Platforms")+
+  scale_fill_manual(values = color_blind_friendly, name = "Model Version")+
+  theme_classic()
+  
+
+Histogram_Site_7
+
+platform_site7_summary <- platform_reasonable %>% group_by(version) %>% summarise(`Version Sample Mean` = mean(site_visits_7), `Version Sample SD` = sd(site_visits_7), `Upper 95% CI` = (mean(site_visits_7) + (2 * sd(site_visits_7/sqrt(n())))), `Lower 95% CI` = (mean(site_visits_7) - (2 * sd(site_visits_7)/sqrt(n()))), sample = n())
+
+medians_model <- platform_reasonable %>% summarise(median = median(site_visits_7))
+
+```
+
+
+
+
+```{r, warning = FALSE, echo = FALSE, message = FALSE, fig.width=10, fig.height = 5}
+grid.arrange(Boxplot_Site_7, Histogram_Site_7, ncol = 2)
+
+knitr::kable(platform_site7_summary, "simple")
+
+```
+
+One user had a purported 49,859 site visits after seven days on the limited posting model. This would average to over 7,100 visits per day, which is unreasonable, especially considering the next highest user was less than 3,000. Therefore, this user was removed before investigating this question. 
+
+Plotting revealed it was necessary to log transform `site_visits_7` in order to get useful visual results. Boxplots (left) of site visits after seven days show almost no difference between the limited and unlimited models. Median visits, depicted by bold lines in the center of each plot, are identical between groups at 17 (log(17 visits) = 2.83). Histograms (right) further show nearly no difference between groups. Each curve represents frequencies of user site visits after seven days. Nearly complete overlap between models (gray hue) indicates the users in each group visited the site nearly the same number of times after seven days. These histograms are arguably a better insight into the question at hand because they are an easy visual of the nearly identical overlap between the two interest groups. No single color (model) sticks out, as the whole curve is almost entirely gray. 
+
+Finally, the table (below) shows the mean site visits after seven days between groups are nearly identical, shown by `Version Sample Mean`, as discussed (limited = 51.8512, unlimited = 51.8509). These means deviate, `Sample SD`, among models about the same, and the 95% confidence intervals overlap. Confidence intervals tell the range of average site visits after seven days of all users of the app for both models. We are 95% confident all users of the limited model will visit the site between 50.86 and 52.85 times after seven days on average, while all users on the original unlimited model will visit the site between 50.85 and 52.85 times after seven days on average. The fact that both 95% confidence intervals overlap greatly supports the idea that the two models do not vary in user visits to the site after seven days. 
+
+### Testing: Is the number of users retained after 7 days different between the two posting models?
+
+```{r, warning = FALSE, echo = FALSE, message = FALSE}
+platform_reasonable_grouped <- platform_reasonable %>% group_by(version) %>% summarise(retention_7 = sum(retention_7 == TRUE), sample_size = n())
+
+retained <- c(8121, 7872)
+sample_size <- c(42504, 43168)
+
+# Success-Failure indicate reasonable test assumptions with much greater than 10 success/failure per group. 
+# Independence of Observations is good based on study design
+
+maybe_increased_retention <- prop.test(retained, sample_size, alternative="greater", correct=FALSE)
+
+retention_confidence_interval <- prop.test(retained, sample_size, alternative="two.sided", correct=FALSE)
+
+`Users Retained 7 Days` <- c(8121, 7872)
+`Total Users` <- c(42504, 43168)
+
+limited_unlimited_model_summaries <- as.data.frame(cbind(`Users Retained 7 Days`, `Total Users`))
+
+limited_unlimited_model_summaries <- limited_unlimited_model_summaries %>% mutate(Model = c("Limited", "Unlimited"),`Percent Retained` = round((`Users Retained 7 Days`/`Total Users`) * 100,2), Conclusion = c("Greater", "Less")) %>% dplyr::select(Model, `Users Retained 7 Days`, `Total Users`, `Percent Retained`, Conclusion)
+
+knitr::kable(limited_unlimited_model_summaries, "simple")
+
+```
+
+
+
+```{r, include = FALSE}
+# Statistical Output 
+# Not included because could cause confusion for those listening to presentation. 
+
+maybe_increased_retention
+
+retention_confidence_interval
+```
+
+
+
+
+Difference in proportions testing indicates that there is evidence of a difference in site retention after seven days between the limited and unlimited models. Particularly, there is evidence to indicate that site retention is greater in the limited posting model compared with the unlimited model (See Table). This provides support for the implementation of a limited posting model on the current platform. Overall, this evidence was obtained at a significance level of 0.05, indicating 95% confidence in the results of this finding (P = 0.0005374). However, there is a 5% our test output is incorrect, but this would have relatively little impact on the company if true.
+
+Additionally, we are 95% confident that the true proportion of seven day retention between the limited and unlimited posting models is between 0.003488 and 0.01393. This 95% confidence interval gives a reasonable range of possibilities for the true difference between versions, and is therefore a justifiable test level for this analysis. 
+
+### Final Analysis of Secondary Research Questions and Potential Future Pathways
+
+```{r, echo = FALSE, include = FALSE, fig.width=10, fig.height = 5}
+# Investigate Final Research Questions
+# Does 1 Day Retention Differ Between Models?
+# Are There Any Other Relationships Warranting Investigation?
+
+##### One Day Retention
+
+# Plot and Table
+
+Platform_Grouped_1Day <- 
+  ggplot(platform_reasonable, aes(version, ..count..))+ 
+  geom_bar(aes(fill = retention_1), position = "dodge")+
+  ylab("Number Retained")+
+  xlab("Platform Version")+
+  ggtitle("Number of Users Retained or Unretained After 1 
+    Day on Either Unlimited or Limited Platforms")+
+  scale_fill_manual(values = color_blind_friendly, name = "Retention")
+
+Platform_Perc_Table_1Day <- prop.table(table(platform_reasonable$retention_1, platform_reasonable$version), margin = 2) * 100
+
+Platform_Perc_Table_1Day <- round(Platform_Perc_Table_1Day, 2)
+
+# Difference In Proportions Test
+
+platform_reasonable_grouped_1Day <- platform_reasonable %>% group_by(version) %>% summarise(retention_1 = sum(retention_1 == TRUE), sample_size = n())
+
+platform_reasonable_grouped_1Day
+
+retained_1Day <- c(19063, 19117)
+sample_size_1Day <- c(42504, 43168)
+
+# Success-Failure indicate reasonable test assumptions with much greater than 10 success/failure per group. 
+# Independence of Observations is good based on study design
+
+different_retention_1Day <- prop.test(retained_1Day, sample_size_1Day, alternative="two.sided", correct=FALSE)
+
+different_retention_1Day
+
+# Fail to Reject Null! No true difference in proportions between groups!
+
+retention_1day_model_summaries <- as.data.frame(cbind(retained_1Day, sample_size_1Day))
+
+retention_1day_model_summaries <- retention_1day_model_summaries %>% mutate(Model = c("Limited", "Unlimited"),`Percent Retained` = round((retained_1Day/sample_size_1Day) * 100,2), Conclusion = c("No Difference", "No Difference"), `Retained After 1 Day` = retained_1Day , `Total Users` = sample_size_1Day) %>% dplyr::select(Model, `Retained After 1 Day`, `Total Users`, `Percent Retained`, Conclusion)
+
+
+############ Final Investigation: Does retention after 7 days depend on if the user signed up on the weekend versus weekday?
+
+# Weekday: Monday through Thursday
+# Weekend: Friday through Sunday
+
+weekend_retention <- platform_reasonable %>% filter(day_of_week == c("Friday", "Saturday", "Sunday"))
+
+weekday_retention <- platform_reasonable %>% filter(day_of_week == c("Monday", "Tuesday", "Wednesday", "Thursday"))
+
+# Plot and Table
+
+Platform_Weekend_7Day <- 
+  ggplot(weekend_retention, aes(version, ..count..))+ 
+  geom_bar(aes(fill = retention_7), position = "dodge")+
+  ylab("Number Retained")+
+  xlab("Platform Version")+
+  ggtitle("Number of Users Who Signed Up on The Weekend Retained
+or Unretained After 7 Days on Either Unlimited or Limited Models")+
+  scale_fill_manual(values = color_blind_friendly, name = "Retention")
+
+Platform_Weekday_7Day <- 
+  ggplot(weekday_retention, aes(version, ..count..))+ 
+  geom_bar(aes(fill = retention_7), position = "dodge")+
+  ylab("Number Retained")+
+  xlab("Platform Version")+
+  ggtitle("Number of Users Who Signed Up on The Weekday Retained 
+  or Unretained After 7 Days on Either Unlimited or Limited Models")+
+  scale_fill_manual(values = color_blind_friendly, name = "Retention")
+
+
+weekend_sample <- weekend_retention %>% group_by(version) %>% summarise(retention_7 = sum(retention_7 == TRUE), sample_size = n())
+
+weekday_sample <- weekday_retention %>% group_by(version) %>% summarise(retention_7 = sum(retention_7 == TRUE), sample_size = n())
+
+retained_7day_weekend <- c(1506, 1457)
+sample_size_weekend <- c(5139, 5278)
+
+retained_7day_weekday <- c(913, 877)
+sample_size_weekday <- c(6647, 6825)
+
+# Success-Failure indicate reasonable test assumptions with much greater than 10 success/failure per group. 
+# Independence of Observations is good based on study design
+
+greater_retention_7Day_weekend <- prop.test(retained_7day_weekend, sample_size_weekend, alternative="greater", correct=FALSE)
+
+greater_retention_7Day_weekday <- prop.test(retained_7day_weekday, sample_size_weekday, alternative="greater", correct=FALSE)
+
+# Results:
+
+greater_retention_7Day_weekend
+
+# Reject Null! True difference in proportions between groups exists on weekends!
+
+greater_retention_7Day_weekday
+
+# Fail to Reject Null! No true difference in proportions between groups on weekdays!
+
+
+`Weekend Retained 7 Days` <- c(1506, 1457)
+`Total Users` <- c(5139, 5278)
+
+weekend_model_summaries <- as.data.frame(cbind(`Weekend Retained 7 Days`, `Total Users`))
+
+weekend_model_summaries <- weekend_model_summaries %>% mutate(Model = c("Limited", "Unlimited"),`Percent Retained` = round((`Weekend Retained 7 Days`/`Total Users`) * 100,2), Conclusion = c("Greater", "Less")) %>% dplyr::select(Model, `Weekend Retained 7 Days`, `Total Users`, `Percent Retained`, Conclusion)
+
+
+`Weekday Retained 7 Days` <- c(913, 877)
+`Total Users` <- c(6647, 6825)
+
+
+weekday_model_summaries <- as.data.frame(cbind(`Weekday Retained 7 Days`, `Total Users`))
+
+weekday_model_summaries <- weekday_model_summaries %>% mutate(Model = c("Limited", "Unlimited"),`Percent Retained` = round((`Weekday Retained 7 Days`/`Total Users`) * 100,2), Conclusion = c("No Difference", "No Difference")) %>% dplyr::select(Model, `Weekday Retained 7 Days`, `Total Users`, `Percent Retained`, Conclusion)
+
+knitr::kable(weekend_model_summaries, "simple")
+
+knitr::kable(weekday_model_summaries, "simple")
+
+```
+
+
+
+
+```{r, echo = FALSE, fig.width=12, fig.height = 5}
+# Further Investigations Plots/Summaries to include in report. 
+
+knitr::kable(retention_1day_model_summaries, "simple")
+
+```
+
+A difference in proportions test for retention after one day indicates there is no evidence of a difference in site retention after one day between the limited and unlimited models.
+This provides insights regarding how users initially use the site. Particularly, it indicates that regardless of the model, a large amount of users will be unretained initially, which is not surprising. Overall, this evidence was obtained at a significance level of 0.05, indicating 95% confidence in the results of this finding (P = 0.09633). However, there is a 5% chance our test results are incorrect. Additionally, we are 95% confident that the true proportion of one day retention between the limited and unlimited posting models is approximately zero. 
+
+```{r, echo = FALSE, fig.width=12, fig.height = 5}
+
+# Weekday vs Weekend Relationship?
+
+grid.arrange(Platform_Weekday_7Day, Platform_Weekend_7Day,  ncol = 2)
+
+```
+
+Finally, an investigation into whether retention after seven days depended on if the user signed up on a weekday (Monday through Thursday) versus a traditional weekend (Friday through Sunday) yielded some intriguing results. Grouped bar plots (above) However, show the total number of users retained is higher in the limited model for both the weekend and weekday. For users who sign up during the weekday, 13.74 percent were retained in the limited model compared to 12.85 percent in the unlimited group. Meanwhile, for users signing up on the weekends, 29.31 percent were retained in the limited model and 27.61 were retained in the unlimited model. However, the difference is greater in the limited model for users signing up on the weekend at 1.7% compared to users signing up during weekdays at only 0.89%.
+
+Difference in proportion tests formally indicate that for users who sign up on the weekends, there is evidence to indicate that site retention after seven days is greater in the limited posting model compared with the unlimited model (P = 0.02724). On the other hand, testing for users signing up during the weekday found no significant evidence that the limited model retention was greater after seven days than the limited approach (P = 0.06499). Both tests were performed at a significance level of 0.05, indicating 95% confidence in their results. 
+
+Overall, this investigation indicates that while introducing the new limited model on our platform would increase user retention in the long term. However, going forward, we may want to allocate more resources towards marketing to potential users on weekends over weekdays to further increase retention. How we attack this marketing would be a great subject for further research, as perhaps there are other factors influencing retention that we could utilize in advertising campaigns going forward. 
+
+
+
+
+
+
+
+
+
+
