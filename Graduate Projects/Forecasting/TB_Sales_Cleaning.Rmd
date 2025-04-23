@@ -1,0 +1,217 @@
+---
+title: "Turf Badger Data Cleaning"
+author: "Adam Bruce"
+date: "2024-09-04"
+output: html_document
+---
+
+```{r, echo = FALSE, include = FALSE}
+library(dplyr)
+library(ggformula)
+library(readr)
+library(gridExtra)
+library(corrplot)
+library(ggplot2)
+library(gplots)
+library(RColorBrewer)
+library(tidyverse)
+library(tidyr)
+library(stringr)
+library(lubridate)
+```
+
+
+```{r}
+AllTime_TBSales <- read_csv("~/Desktop/DS745 Visualizations/Project 1/AllTime_TBSales.csv")
+
+# find unique sales reps
+unique(AllTime_TBSales$`Sales Rep`)
+
+# Case When to Anonymize Sales Reps
+TB_Sales <- AllTime_TBSales %>% mutate(`Sales Rep` = case_when(
+  `Sales Rep` == "Nick  Everesdyk" ~ "A", `Sales Rep` == "Jackson Buettner" ~ "B", `Sales Rep` == "James Bruce" ~ "C", `Sales Rep` == "Malachi Ecker" ~ "D", `Sales Rep` == "Graham Buettner" ~ "E", `Sales Rep` == "Reed Harrington" ~ "F", `Sales Rep` == "Iver Stenberg" | `Sales Rep` == "IVER STERNBERG"  ~ "F", `Sales Rep` == "Josh Riley" ~ "G", `Sales Rep` == "Zander Zima" ~ "H", `Sales Rep` == "Mason Lawlis" ~ "I", `Sales Rep` == "John Hatz" ~ "J", `Sales Rep` == "Garrison Hinkens" ~ "K", `Sales Rep` == "Charlie Cassidy" ~ "L", `Sales Rep` == "Luke Knudtson" ~ "M", `Sales Rep` == "David Mosse" ~ "N", `Sales Rep` == "Kendra  Matsche" ~ "O", `Sales Rep` == "Kha Vang" ~ "P", `Sales Rep` == "Jack Drephal" ~ "Q", `Sales Rep` == "Ethan Hoc" ~ "R", `Sales Rep` == "Mason Lawlis la crosse" ~ "S", `Sales Rep` == "Sully  Scherber" ~ "T", `Sales Rep` == "Jordan Miller" ~ "U", `Sales Rep` == "Chandler Husbye" ~ "V", `Sales Rep` == "Ben Eastlund" ~ "W", `Sales Rep` == "Jordan  Mayhak" ~ "X", `Sales Rep` == "Danny  Garcia" ~ "Y", `Sales Rep` == "Dylan Saylor" ~ "Z", `Sales Rep` == "Gavin Geurts" ~ "AA", `Sales Rep` == "Conner Cvar" ~ "BB", `Sales Rep` == "LOGAN BORNEMAN" ~ "CC", `Sales Rep` == "Ryan Reynolds" ~ "DD", `Sales Rep` == "Alex Miller" ~ "EE", `Sales Rep` == "Devon  Eickhoff" | `Sales Rep` == "Devon E" ~ "FF", `Sales Rep` == "Andrew Eastlund" ~ "GG", `Sales Rep` == "Heidi Alexander" ~ "HH", `Sales Rep` == "Lillian  Stenberg" ~ "II", `Sales Rep` == "Anthony Seymour" ~ "JJ", `Sales Rep` == "Cody Damitz" ~ "KK", `Sales Rep` == "Jeremy Olson" ~ "LL", `Sales Rep` == "Aaron J" ~ "MM", `Sales Rep` == "Evan  J" ~ "NN", `Sales Rep` == "Jalen D" ~ "OO", `Sales Rep` == "Steve Macherey" ~ "PP", `Sales Rep` == "Henry L" ~ "QQ", `Sales Rep` == "Paul B" ~ "RR", `Sales Rep` == "Mat Abajian" ~ "SS", `Sales Rep` == "Dylan Deal" ~ "TT")) %>% separate_wider_delim(`Date Sold`, delim = " ", names = c("Date_Sold", "Time_Sold", "AM_PM_Marker"))
+
+# View Product Sales Numbers
+TB_Sales %>% group_by(Subscription) %>% summarise(N_Sold = n(), Total_Value = sum(`Contract Value`))
+
+### Group By Service Type into three main services Pest, Mosquito, Lawn. Exclude Commercial
+
+TB_Sales_2 <- TB_Sales %>% mutate(Subscription = case_when(
+  Subscription == "Fertilization" | Subscription == "L Core Aeration" | Subscription == "L FERT TEMP" | Subscription == "L Fall Core Aeration and Overseeding" | Subscription == "L Fungicide" | Subscription == "L Grub Control" | Subscription == "L Grub Preventative" ~ "Lawn", Subscription == "P German Cockroach" | Subscription == "P One Time Pest Control" | Subscription == "P Organic Badger Service Plan" | Subscription == "PC 22/23" | Subscription == "Pest - Bed Bug" | Subscription == "Pest - Bi-Annual" | Subscription == "Pest - Bi-Monthly" | Subscription == "Pest - Eave & Overhang Treatment" | Subscription == "Pest - Monthly Pest Control" | Subscription == "Pest - Quarterly Pest Control" | Subscription == "Pest - Tri-Annual Pest Control" | Subscription == "RBB - Rodent Bait Box" | Subscription == "WL - Foundation Exclusion" | Subscription == "X Quarterly Pest" ~ "Pest", Subscription == "Mosquito - Tri-Weekly" | Subscription == "Mosquito - Monthly" ~ "Mosquito")) 
+
+# Remove the commercial sales as those are higher level than those for the analysis
+TB_Sales_2 <- TB_Sales_2[!(TB_Sales_2$Subscription %in% c("Commercial RBB", "Commercial Pest")),]
+
+# Remove the 4 total values from 21 and 22.
+TB_2022 <- TB_Sales_2[endsWith(TB_Sales_2$Date_Sold,("22")),]
+TB_Sales_2 <- TB_Sales_2[!(TB_Sales_2$Date_Sold %in% c("11/01/21", "07/01/22", "05/30/22", "05/20/22")),]
+
+TB_Sales_Final <- TB_Sales_2 %>% select(-AM_PM_Marker) %>% na.omit(TB_Sales_2$Subscription)
+
+# Plot total sales for each service type
+
+# Create Overall Grouping Dataset
+
+Grouped_TB_Services <- TB_Sales_Final %>% group_by(Subscription) %>% summarise(Subscription = Subscription, Number_Sold = n())
+
+# Create Date of Sale Dataset
+
+Clean_TB_Services <- TB_Sales_Final %>% group_by(Date_Sold, Subscription) %>% summarise(Date_Sold = Date_Sold, Subscription = Subscription, Number_Sold = n(), Revenue = sum(`Contract Value`)) %>% unique()
+
+# barplot
+
+Sales_By_Service <- 
+  ggplot(aes(x = Subscription), data = Grouped_TB_Services)+
+  geom_bar(color = "black", fill = c("#CC7917", "#0072B2","#CC79A7"))+
+  geom_text(stat='count', aes(label=..count..), vjust=1.5)+
+  theme_bw()+
+  ylim(0,2500)+
+  ylab("Total Sold")+
+  xlab("Subscription Type")+
+  ggtitle("Figure 1: All-Time Subscriptions Sold by Turf Badger's Steven Point Office")+
+  theme(
+    # LABELS APPEARANCE
+    plot.title = element_text(size=14, face= "bold", colour= "black" ),
+    axis.title.x = element_text(size=14, face="bold", colour = "black"),    
+    axis.title.y = element_text(size=14, face="bold", colour = "black"),    
+    axis.text.x = element_text(size=12, face="bold", colour = "black"), 
+    axis.text.y = element_text(size=12, face="bold", colour = "black"))
+  
+  
+Sales_By_Service
+
+# Export cleaned data to CSV 
+
+write.csv(Clean_TB_Services,"~/Desktop/DS745 Visualizations/Project 1/Clean_TB_Services.csv", row.names = FALSE)
+
+
+
+```
+
+### Calculating Percent Lost
+
+```{r}
+### Percent Cancelled By Month
+
+# Start by filtering for 2023 and 2024 years into their own datasets
+TB_2023 <- TB_Sales_2[endsWith(TB_Sales_2$Date_Sold,("23")),]
+TB_2024 <- TB_Sales_2[endsWith(TB_Sales_2$Date_Sold,("24")),]
+
+# Now split the date sold into months, day, year columns
+TB_2023[c('Month_Sold', 'Day_Sold', 'Year_Sold')] <- str_split_fixed(TB_2023$Date_Sold, '/', 3)
+TB_2024[c('Month_Sold', 'Day_Sold', 'Year_Sold')] <- str_split_fixed(TB_2024$Date_Sold, '/', 3)
+
+# Now calculate percent lost by month. Start by Grouping the datasets by month, status and find n()
+
+TB_Lost_2023 <- TB_2023 %>% group_by(Month_Sold, Status) %>% summarise(Month_Sold = Month_Sold, Status = Status, Number = n()) %>% unique()
+TB_Lost_2024 <- TB_2024 %>% group_by(Month_Sold, Status) %>% summarise(Month_Sold = Month_Sold, Status = Status, Number = n()) %>% unique()
+
+# Remove Pending Status Customers
+TB_Lost_2023 <- TB_Lost_2023 %>% filter(Status != "Pending")
+TB_Lost_2024 <- TB_Lost_2024 %>% filter(Status != "Pending")
+
+
+# Perform the percent lost calculation for 2023
+for (row in 1:nrow(TB_Lost_2023)) {
+    if(row == nrow(TB_Lost_2023)){
+      break 
+    } else{
+      next_row = row+1
+      month <- TB_Lost_2023[row, "Month_Sold"]
+      next_month_value <- TB_Lost_2023[next_row, "Month_Sold"]
+      number_customers <- TB_Lost_2023[row, "Number"]
+      next_number_customers <- TB_Lost_2023[next_row, "Number"]
+      if(month == next_month_value) {
+          total_customers <- number_customers + next_number_customers
+          lost_customers <- number_customers
+          percent_lost = round((lost_customers / total_customers) * 100, 2)
+          print(paste("The Percent Lost of customers on month ", month, 
+                    " is: ", percent_lost))
+      }
+    }
+}
+
+# Manual Check of Calculation for month 3
+
+(6/46)*100 # Good!
+
+
+# Create a percent lost vector for 2023
+
+Percent_Lost <- c(13.04, 4.86, 5.96, 9.44, 14.62, 27.73, 28.77, 15.79, 12.5, 0)
+Month <- c("03", "04", "05", "06", "07", "08", "09", "10", "11", "12")
+Year <- c("2023", "2023", "2023", "2023", "2023", "2023", "2023", "2023", "2023", "2023")
+
+
+# Create 2023 Dataset
+
+Lost_2023 <- as.data.frame(cbind(Year, Month, Percent_Lost))
+
+# first remove month nine form 2024 sales because only 3 days were gone in September at time of this data being used 
+TB_Lost_2024 <- TB_Lost_2024 %>% filter(Month_Sold != "09")
+
+# Perform the percent lost calculation for 2024
+
+# Perform the percent lost calculation for 2023
+for (row in 1:nrow(TB_Lost_2024)) {
+    if(row == nrow(TB_Lost_2024)){
+      break 
+    } else{
+      next_row = row+1
+      month <- TB_Lost_2024[row, "Month_Sold"]
+      next_month_value <- TB_Lost_2024[next_row, "Month_Sold"]
+      number_customers <- TB_Lost_2024[row, "Number"]
+      next_number_customers <- TB_Lost_2024[next_row, "Number"]
+      if(month == next_month_value) {
+          total_customers <- number_customers + next_number_customers
+          lost_customers <- number_customers
+          percent_lost = round((lost_customers / total_customers) * 100, 2)
+          print(paste("The Percent Lost of customers on month ", month, 
+                    " is: ", percent_lost))
+      }
+    }
+}
+
+# check the calculation for month 1
+
+(12/45) * 100 # GOOD!
+
+# Create a churn vector for 2024
+
+Percent_Lost <- c(26.67, 31.43, 27.94, 17.2, 11.07, 7.45, 12.5, 7.84)
+Month <- c("01", "02", "03", "04", "05", "06", "07", "08")
+Year <- c("2024", "2024", "2024", "2024", "2024", "2024", "2024", "2024")
+
+
+# Create 2024 Dataset
+
+Lost_2024 <- as.data.frame(cbind(Year, Month, Percent_Lost))
+
+
+StevensPoint_TurfBadger_PL <- as.data.frame(rbind(Lost_2023, Lost_2024))
+StevensPoint_TurfBadger_PL$Percent_Lost <- as.numeric(StevensPoint_TurfBadger_PL$Percent_Lost)
+
+# Percent Lost 
+TB_Lost_Month <- 
+  ggplot(StevensPoint_TurfBadger_PL, aes(x = Month, y = Percent_Lost, color = Year))+
+  geom_line(aes(group = Year), size = 1)+
+  geom_point(size = 2)+
+  scale_color_manual(values = c("#CC7917", "#0072B2"), name = "Year")+
+  ylab("Percent Lost")+
+  xlab("Month")+
+  ggtitle("Figure 2: Percent Customers Lost by Month of 2023 and 2024 for Turf Badger's Stevens Point Office")+
+  ylim(0,35)+
+  theme_bw()+
+  theme(
+    # LABELS APPEARANCE
+    plot.title = element_text(size=14, face= "bold", colour= "black" ),
+    axis.title.x = element_text(size=14, face="bold", colour = "black"),    
+    axis.title.y = element_text(size=14, face="bold", colour = "black"),    
+    axis.text.x = element_text(size=12, face="bold", colour = "black"), 
+    axis.text.y = element_text(size=12, face="bold", colour = "black"))
+
+TB_Lost_Month
+
+```
+
+
