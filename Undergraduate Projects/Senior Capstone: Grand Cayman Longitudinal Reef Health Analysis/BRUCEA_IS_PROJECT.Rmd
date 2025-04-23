@@ -1,0 +1,1771 @@
+---
+title: "Cayman Islands Species Abundance Analysis"
+author: "Adam Bruce"
+date: '2022-11-01'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message=FALSE, warning=FALSE, fig.height = 5, fig.width = 6)
+library(tidyverse)
+library(knitr)
+library(dplyr)
+library(corrplot)
+library(skimr)
+library(grid)
+library(gridExtra)
+library(tidyselect)
+library(selectr)
+library(ISLR)
+library(forcats)
+library(corrplot)
+library(ggplot2)
+library(kableExtra)
+library(caret)
+library(grid)
+library(openintro)
+library(tidyverse)
+library(ISLR)
+library(caret)
+library(recipes)
+library(glmnet)
+library(gam)
+library(splines)
+library(earth)
+library(rpart)
+library(rpart.plot)
+library(ipred)
+library(e1071)
+library(ranger)
+library(pls)
+library(datasets)
+library(DescTools) 
+library(Hmisc)
+library(e1071)
+library(pwr)
+library(gapminder)
+library(car) 
+library(tibble)
+library(onewaytests) 
+library(rptR) 
+library(esc) 
+library(broom) 
+library(MASS) 
+library(corrgram) 
+library(rcompanion)
+library(FSA)
+library(lmtest) 
+library(lme4)
+library(lmerTest)
+library(Hmisc)
+library(nlme)
+library(GGally)
+library(factoextra)
+library(ISLR) 
+library(cluster) # for gower similarity and pam
+library(Rtsne)
+library(mixtools)
+library(mclust)
+library(lattice)
+require(pscl) # alternatively can use package ZIM for zero-inflated models
+
+
+
+
+
+
+
+
+set.seed(09042022)
+```
+
+
+## Initial Data Wrangling
+
+```{r}
+CAYMAN_FISH <- read_csv("~/Desktop/IS_CAPSTONE/SINGLE_CAYMAN_FISH_DATA.csv")
+
+
+CAYMAN_FISH_TIDY <- CAYMAN_FISH %>% 
+  pivot_longer(cols = c("1998/CH", "1998/DG", "1998/SB", "1998/SC", "1998/TF", "2000/CP", "2000/DG",	"2000/SC",	"2000/CH",	"2000/SB",	"2000/TF",	"2000/SV",	"2000/BB",	"2002/BB",	"2002/DG",	"2002/SB",	"2002/SC",	"2002/SV",	"2002/CP",	"2002/TF",	"2004/CP",	"2004/DG",	"2004/SC",	"2004/SB",	"2004/HM",	"2004/SV",	"2004/BB",	"2006/CR",	"2006/DG",	"2006/CP",	"2006/SB",	"2006/SC",	"2006/SH",	"2006/SV",	"2006/TF",	"2008/BB",	"2008/CP",	"2008/CR",	"2008/DG",	"2008/SC",	"2008/SH",	"2008/SV",	"2008/TF",	"2010/CP",	"2010/CR",	"2010/DG",	"2010/HM",	"2010/SB",	"2010/SC",	"2010/SH",	"2010/SV",	"2010/TF",	"2012/BB",	"2012/CP",	"2012/CR",	"2012/DG",	"2012/ER",	"2012/SV",	"2012/SC",	"2012/SB",	"2012/SH",	"2012/TF",	"2014/BB",	"2014/CP",	"2014/CR",	"2014/CH",	"2014/DG",	"2014/SV",	"2014/SC",	"2014/SB",	"2014/SH",	"2014/TF",	"2016/SC",	"2016/DG",	"2016/CR",	"2016/SH",	"2016/SV",	"2016/CP",	"2016/TF",	"2016/CH",	"2016/SB",	"2016/ER",	"2018/BB",	"2018/CP",	"2018/CR",	"2018/DG",	"2018/ER",	"2018/SV",	"2018/SC",	"2018/SB",	"2018/SH",	"2018/TF"), 
+  names_to = "YEAR/LOCATION", values_to = "DENSITY_INDEX") %>%
+  separate(col = "YEAR/LOCATION", into = c("YEAR", "LOCATION"), sep = "/")
+
+CAYMAN_FISH_TIDY$YEAR <- as.numeric(CAYMAN_FISH_TIDY$YEAR)
+
+CAYMAN_FISH_TIDY <- CAYMAN_FISH_TIDY[!(CAYMAN_FISH_TIDY$DENSITY_INDEX >= 4.0),]
+
+CAYMAN_FISH_TIDY <- CAYMAN_FISH_TIDY[!(CAYMAN_FISH_TIDY$LOCATION == "HM"),]
+
+CAYMAN_FISH_TIDY <- CAYMAN_FISH_TIDY %>% mutate(MARINE_RESERVE = if_else(LOCATION %in% c("BB", "SB", "TF", "SC"), "No", "Yes")) %>% dplyr::select(SPECIES_NAME, FISH_ID, YEAR, DIET, LOCATION, MARINE_RESERVE, DENSITY_INDEX)
+
+
+
+
+```
+
+
+```{r}
+
+### MAIN FAMILIES USED!
+# Apogonidae = c("Barred Cardinalfish", "Belted Cardinalfish", "Flamefish", "Twospot Cardinalfish", "Whitestar Cardinalfish", "Sponge Cardinalfish")
+# Carangidae = c("Blue Runner", "Bar Jack", "Horse-eye Jack", "Rainbow Runner", "Greater Amberjack", "Yellow Jack", "Almaco Jack", "Crevalle Jack", "Permit", "Black Jack", "Palometa", "Round Scad" )
+# Sparidae = c("Jolthead Porgy", "Sheepshead Porgy", "Saucereye Porgy", "Pluma", "Spottail Pinfish", "Sheepshead", "Silver Porgy")
+# Gobiidae = c("Shortstripe Goby", "Cleaning Goby", "Goldspot Goby", "Yellowline Goby", "Masked/Glass Goby", "Bridled Goby", "Neon Goby", "Colon Goby", "Blue Goby", "Spotlight Goby", "Peppermint Goby", "Yellownose Goby", "Sharknose Goby", "Pallid Goby", "Hovering Goby", "Rusty Goby", "Yellowprow Goby", "Orangesided Goby")
+# Haemulidae = c("French Grunt", "Margate (White)", "Cottonwick", "Bluestriped Grunt", "Sailors Choice", "White Grunt", "Margate (Black)", "Porkfish", "Caesar Grunt", "Striped Grunt", "Boga", "Unidentified juvenile Grunt", "Smallmouth Grunt", "Tomtate", "Bonnetmouth", "Spanish Grunt")
+# Lutjanidae = c("Mutton Snapper", "Schoolmaster", "Mahogany Snapper", "Yellowtail Snapper", "Lane Snapper", "Gray Snapper", "Dog Snapper", "Cubera Snapper", "Blackfin Snapper", "Glasseye Snapper")
+# Pomacentridae = c("Threespot Damselfish", "Rock Beauty", "Blue Chromis", "Sergeant Major", "Longfin Damselfish", "Dusky Damselfish", "Sunshinefish", "Bicolor Damselfish", "Yellowtail Damselfish", "Brown Chromis", "Yellowtail Reeffish", "Cocoa Damselfish", "Beaugregory", "Purple Reeffish")
+# Scaridae = c("Stoplight Parrotfish", "Redband Parrotfish", "Rainbow Parrotfish", "Princess Parrotfish", "Redtail Parrotfish", "Midnight Parrotfish", "Yellowtail (Redfin)Parrotfish", "Striped Parrotfish", "Queen Parrotfish", "Greenblotch Parrotfish", "Blue Parrotfish", "Bluelip Parrotfish", "Bucktooth Parrotfish")
+# Serranidae = c("Red Hind", "Graysby", "Red Grouper", "Scamp", "Greater Soapfish", "Indigo Hamlet", "Shy Hamlet", "Barred Hamlet", "Nassau Grouper", "Black Grouper", "Butter Hamlet", "Lantern Bass", "Rock Hind", "Tiger Grouper", "Gag", "Harlequin Bass", "Coney", "Blue Hamlet", "Black Hamlet", "Yellowmouth Grouper", "Yellowtail Hamlet", "Goliath Grouper (Jewfish)", "Yellowfin Grouper", "Chalk Bass", "Yellowbelly Hamlet", "Hybrid Hamlet", "Tan Hamlet", "Belted Sandfish", "Creole-fish", "Peppermint Bass	")
+# Labridae = c("Creole Wrasse", "Bluehead", "Spanish Hogfish", "Spotfin Hogfish", "Yellowhead Wrasse", "Blackear Wrasse","Puddingwife", "Hogfish", "Green Razorfish", "Slippery Dick", "Clown Wrasse", "Rainbow Wrasse", "Rosy Razorfish", "Yellowcheek Wrasse", "Pearly Razorfish")
+# Holocentridae = c("Reef Squirrelfish", "Squirrelfish", "Longjaw Squirrelfish", "Longspine Squirrelfish", "Dusky Squirrelfish", "Blackbar Soldierfish")
+# Other = c("Unidentified Triplefin", "Bonefish", "Flying Gurnard", "Bluespotted Cornetfish", "Sharptail Eel", "Houndfish", "Tobaccofish", "Atlantic Spadefish", "Arrow Blenny", "Secretary Blenny", "Sailfin Blenny", "Redspotted Hawkfish", "Sharksucker", "Silversides", "Nurse Shark", "Spotted Eagle Ray", "Glassy Sweeper", "Sand Diver", "Southern Stingray", "Yellow Stingray", "Yellowhead Jawfish", "Common Snook", "Yellowfin Mojarra", "Lancer Dragonet", "Tarpon", "Sand Tilefish", "Trumpetfish", "Brown Garden Eel", "Cubbyu", "Jackknife Fish", "Highhat", "Spotted Drum", "Smooth Trunkfish", "Spotted Trunkfish", "Scrawled Cowfish", "Honeycomb Cowfish", "Blue Tang", "Doctorfish", "Ocean Surgeonfish", "Green Sea Turtle", "Hawksbill Sea Turtle", "Unidentified Sea Turtle", "Loggerhead Sea Turtle", "Diamond Blenny", "Saddled Blenny", "Rosy Blenny", "Hairy Blenny", "Green Moray", "Goldentail Moray", "Spotted Moray", "Chain Moray", "Fairy Basslet", "Blackcap Basslet", "Threeline Basslet", "Lionfish", "Spotted Scorpionfish", "Sharpnose Puffer", "Bandtail Puffer", "Chub (Bermuda/Yellow)", "Balloonfish", "Porcupinefish", "Cero", "Spanish Mackerel", "Yellow Goatfish", "Spotted Goatfish", "Great Barracuda", "Southern Sennet", "Peacock Flounder", "Eyed Flounder", "Mottled Mojarra", "Reef Croaker", "Roughhead Blenny", "Sand Perch", "Spiny Blenny", "Molly Miller", "Redlip Blenny", "Darkheaded Blenny", "Pearl Blenny", "Wrasse Bleny", "Seaweed Blenny", "Queen Triggerfish", "Black Durgon", "Ocean Triggerfish", "Gray Triggerfish", "Sargassum Triggerfish", "French Angelfish", "Queen Angelfish", "Gray Angelfish", "Blue Angelfish", "Cherubfish", "Orangespotted Filefish", "Slender Filefish", "Scrawled Filefish", "Whitespotted Filefish", "Spotfin Butterflyfish", "Foureye Butterflyfish", "Banded Butterflyfish", "Longsnout Butterflyfish", "Reel Butterflyfish")
+
+
+# OTHER FAMILIES INCLUDE
+
+# Albulidae = c("Bonefish")
+# Dactylopteridae = c("Flying Gurnard")
+# Fistulariidae = c("Bluespotted Cornetfish")
+# Ophichthidae = c("Sharptail Eel")
+# Belonidae = c("Houndfish")
+# Grammidae = c("Tobaccofish")
+# Ephippidae = c("Atlantic Spadefish")
+# Chaenopsidae = c("Arrow Blenny", "Secretary Blenny", "Sailfin Blenny")
+# Cirrhitidae = c("Redspotted Hawkfish")
+# Echeneidae = c("Sharksucker")
+# Atherinidae = c("Silversides")
+# Ginglymostomatidae = c("Nurse Shark")
+# Myliobatidae = c("Spotted Eagle Ray")
+# Pempheridae = c("Glassy Sweeper")
+# Synodontidae = c("Sand Diver")
+# Dasyatidae = c("Southern Stingray")
+# Urotrygonidae = c("Yellow Stingray")
+# Opistognathidae = c("Yellowhead Jawfish")
+# Centropomidae = c("Common Snook")
+# Gerreidae = c("Yellowfin Mojarra")
+# Callionymidae = c("Lancer Dragonet")
+# Megalopidae = c("Tarpon")
+# Malacanthidae = c("Sand Tilefish")
+# Aulostomidae = c("Trumpetfish")
+# Congridae = c("Brown Garden Eel")
+# Sciaenidae = c("Cubbyu", "Jackknife Fish", "Highhat", "Spotted Drum")
+# Ostraciidae = c("Smooth Trunkfish", "Spotted Trunkfish", "Scrawled Cowfish", "Honeycomb Cowfish" )
+# Acantharidae = c("Blue Tang", "Doctorfish", "Ocean Surgeonfish")
+# Cheloniidae = c("Green Sea Turtle", "Hawksbill Sea Turtle", "Unidentified Sea Turtle", "Loggerhead Sea Turtle")
+# Labrisomidae = c("Diamond Blenny", "Saddled Blenny", "Rosy Blenny", "Hairy Blenny")
+# Muraenidae = c("Green Moray", "Goldentail Moray", "Spotted Moray", "Chain Moray")
+# Grammatidae = c("Fairy Basslet", "Blackcap Basslet", "Threeline Basslet")
+# Scorpaenidae = c("Lionfish", "Spotted Scorpionfish")
+# Tetraodontidae = c("Sharpnose Puffer", "Bandtail Puffer")
+# Kyphosidae = c("Chub (Bermuda/Yellow)")
+# Diodontidae = c("Balloonfish", "Porcupinefish")
+# Scombridae = c("Cero", "Spanish Mackerel")
+# Mullidae = c("Yellow Goatfish", "Spotted Goatfish")
+# Sphyraenidae = c("Great Barracuda", "Southern Sennet")
+# Bothidae = c("Peacock Flounder", "Eyed Flounder")
+# Blenniidae = c("Molly Miller", "Redlip Blenny", "Darkheaded Blenny", "Pearl Blenny", "Wrasse Bleny", "Seaweed Blenny")
+# Balistidae = c("Queen Triggerfish", "Black Durgon", "Ocean Triggerfish", "Gray Triggerfish", "Sargassum Triggerfish")
+# Pomacanthidae = c("French Angelfish", "Queen Angelfish", "Gray Angelfish", "Blue Angelfish", "Cherubfish")
+# Monacanthidae = c("Orangespotted Filefish", "Slender Filefish", "Scrawled Filefish", "Whitespotted Filefish")
+# Chaetodontidae = c("Spotfin Butterflyfish", "Foureye Butterflyfish", "Banded Butterflyfish", "Longsnout Butterflyfish", "Reel Butterflyfish")
+
+
+CAYMAN_FISH_TIDY <- CAYMAN_FISH_TIDY %>% mutate(SCIENTIFIC_FAMILY = c("0"))
+
+CAYMAN_FISH_TIDY <- CAYMAN_FISH_TIDY %>% mutate(SCIENTIFIC_FAMILY = case_when(
+  CAYMAN_FISH_TIDY$SPECIES_NAME %in% c("Barred Cardinalfish", "Belted Cardinalfish", "Flamefish", "Twospot Cardinalfish", "Whitestar Cardinalfish", "Sponge Cardinalfish") ~ "Apogonidae", 
+  CAYMAN_FISH_TIDY$SPECIES_NAME %in% c("Blue Runner", "Bar Jack", "Horse-eye Jack", "Rainbow Runner", "Greater Amberjack", "Yellow Jack", "Almaco Jack", "Crevalle Jack", "Permit", "Black Jack", "Palometa", "Round Scad") ~ "Carangidae",
+  CAYMAN_FISH_TIDY$SPECIES_NAME %in% c("Jolthead Porgy", "Sheepshead Porgy", "Saucereye Porgy", "Pluma", "Spottail Pinfish", "Sheepshead", "Silver Porgy") ~ "Sparidae",
+  CAYMAN_FISH_TIDY$SPECIES_NAME %in% c("Shortstripe Goby", "Cleaning Goby", "Goldspot Goby", "Yellowline Goby", "Masked/Glass Goby", "Bridled Goby", "Neon Goby", "Colon Goby", "Blue Goby", "Spotlight Goby", "Peppermint Goby", "Yellownose Goby", "Sharknose Goby", "Pallid Goby", "Hovering Goby", "Rusty Goby", "Yellowprow Goby", "Orangesided Goby") ~ "Gobiidae",
+  CAYMAN_FISH_TIDY$SPECIES_NAME %in% c("French Grunt", "Margate (White)", "Cottonwick", "Bluestriped Grunt", "Sailors Choice", "White Grunt", "Margate (Black)", "Porkfish", "Caesar Grunt", "Striped Grunt", "Boga", "Unidentified juvenile Grunt", "Smallmouth Grunt", "Tomtate", "Bonnetmouth", "Spanish Grunt") ~ "Haemulidae",
+  CAYMAN_FISH_TIDY$SPECIES_NAME %in% c("Mutton Snapper", "Schoolmaster", "Mahogany Snapper", "Yellowtail Snapper", "Lane Snapper", "Gray Snapper", "Dog Snapper", "Cubera Snapper", "Blackfin Snapper", "Glasseye Snapper") ~ "Lutjanidae",
+  CAYMAN_FISH_TIDY$SPECIES_NAME %in% c("Threespot Damselfish", "Rock Beauty", "Blue Chromis", "Sergeant Major", "Longfin Damselfish", "Dusky Damselfish", "Sunshinefish", "Bicolor Damselfish", "Yellowtail Damselfish", "Brown Chromis", "Yellowtail Reeffish", "Cocoa Damselfish", "Beaugregory", "Purple Reeffish") ~ "Pomacentridae",
+  CAYMAN_FISH_TIDY$SPECIES_NAME %in% c("Stoplight Parrotfish", "Redband Parrotfish", "Rainbow Parrotfish", "Princess Parrotfish", "Redtail Parrotfish", "Midnight Parrotfish", "Yellowtail (Redfin)Parrotfish", "Striped Parrotfish", "Queen Parrotfish", "Greenblotch Parrotfish", "Blue Parrotfish", "Bluelip Parrotfish", "Bucktooth Parrotfish") ~ "Scaridae",
+  CAYMAN_FISH_TIDY$SPECIES_NAME %in% c("Red Hind", "Graysby", "Red Grouper", "Scamp", "Greater Soapfish", "Indigo Hamlet", "Shy Hamlet", "Barred Hamlet", "Nassau Grouper", "Black Grouper", "Butter Hamlet", "Lantern Bass", "Rock Hind", "Tiger Grouper", "Gag", "Harlequin Bass", "Coney", "Blue Hamlet", "Black Hamlet", "Yellowmouth Grouper", "Yellowtail Hamlet", "Goliath Grouper (Jewfish)", "Yellowfin Grouper", "Chalk Bass", "Yellowbelly Hamlet", "Hybrid Hamlet", "Tan Hamlet", "Belted Sandfish", "Creole-fish", "Peppermint Bass") ~ "Serranidae",
+  CAYMAN_FISH_TIDY$SPECIES_NAME %in% c("Creole Wrasse", "Bluehead", "Spanish Hogfish", "Spotfin Hogfish", "Yellowhead Wrasse", "Blackear Wrasse","Puddingwife", "Hogfish", "Green Razorfish", "Slippery Dick", "Clown Wrasse", "Rainbow Wrasse", "Rosy Razorfish", "Yellowcheek Wrasse", "Pearly Razorfish") ~ "Labridae",
+  CAYMAN_FISH_TIDY$SPECIES_NAME %in% c("Reef Squirrelfish", "Squirrelfish", "Longjaw Squirrelfish", "Longspine Squirrelfish", "Dusky Squirrelfish", "Blackbar Soldierfish") ~ "Holocentridae",
+  CAYMAN_FISH_TIDY$SPECIES_NAME %in% c("Unidentified Triplefin", "Bonefish", "Flying Gurnard", "Bluespotted Cornetfish", "Sharptail Eel", "Houndfish", "Tobaccofish", "Atlantic Spadefish", "Arrow Blenny", "Secretary Blenny", "Sailfin Blenny", "Redspotted Hawkfish", "Sharksucker", "Silversides", "Nurse Shark", "Spotted Eagle Ray", "Glassy Sweeper", "Sand Diver", "Southern Stingray", "Yellow Stingray", "Yellowhead Jawfish", "Common Snook", "Yellowfin Mojarra", "Lancer Dragonet", "Tarpon", "Sand Tilefish", "Trumpetfish", "Brown Garden Eel", "Cubbyu", "Jackknife Fish", "Highhat", "Spotted Drum", "Smooth Trunkfish", "Spotted Trunkfish", "Scrawled Cowfish", "Honeycomb Cowfish", "Blue Tang", "Doctorfish", "Ocean Surgeonfish", "Green Sea Turtle", "Hawksbill Sea Turtle", "Unidentified Sea Turtle", "Loggerhead Sea Turtle", "Diamond Blenny", "Saddled Blenny", "Rosy Blenny", "Hairy Blenny", "Green Moray", "Goldentail Moray", "Spotted Moray", "Chain Moray", "Fairy Basslet", "Blackcap Basslet", "Threeline Basslet", "Lionfish", "Spotted Scorpionfish", "Sharpnose Puffer", "Bandtail Puffer", "Chub (Bermuda/Yellow)", "Balloonfish", "Porcupinefish", "Cero", "Spanish Mackerel", "Yellow Goatfish", "Spotted Goatfish", "Great Barracuda", "Southern Sennet", "Peacock Flounder", "Eyed Flounder", "Mottled Mojarra", "Reef Croaker", "Roughhead Blenny", "Sand Perch", "Spiny Blenny", "Molly Miller", "Redlip Blenny", "Darkheaded Blenny", "Pearl Blenny", "Wrasse Bleny", "Seaweed Blenny", "Queen Triggerfish", "Black Durgon", "Ocean Triggerfish", "Gray Triggerfish", "Sargassum Triggerfish", "French Angelfish", "Queen Angelfish", "Gray Angelfish", "Blue Angelfish", "Cherubfish", "Orangespotted Filefish", "Slender Filefish", "Scrawled Filefish", "Whitespotted Filefish", "Spotfin Butterflyfish", "Foureye Butterflyfish", "Banded Butterflyfish", "Longsnout Butterflyfish", "Reel Butterflyfish", "(Other)") ~ "Other",
+  TRUE ~ as.character(CAYMAN_FISH_TIDY$SCIENTIFIC_FAMILY)
+)) %>% dplyr::select(SPECIES_NAME, FISH_ID, SCIENTIFIC_FAMILY, YEAR, DIET, LOCATION, MARINE_RESERVE, DENSITY_INDEX)
+
+CAYMAN_FISH_TIDY
+
+```
+### Unique Datasets 
+
+```{r}
+CAYMAN_NO_ZEROS <- CAYMAN_FISH_TIDY %>% filter(DENSITY_INDEX != 0) %>% mutate(YEAR1998 = (YEAR - 1998)) %>% dplyr::select(SPECIES_NAME, FISH_ID, SCIENTIFIC_FAMILY, DIET, LOCATION, MARINE_RESERVE, DENSITY_INDEX, YEAR1998)
+
+CAYMAN_FISH_YEARS <- CAYMAN_FISH_TIDY %>% mutate(YEAR1998 = (YEAR - 1998)) %>% dplyr::select(SPECIES_NAME, SCIENTIFIC_FAMILY, DIET, LOCATION, MARINE_RESERVE, DENSITY_INDEX, YEAR1998)
+
+
+```
+
+### Math
+
+```{r}
+sum(CAYMAN_FISH_TIDY$DENSITY_INDEX == 0)
+sum(CAYMAN_FISH_TIDY$DENSITY_INDEX == 1)
+sum(CAYMAN_FISH_TIDY$DENSITY_INDEX == 2)
+sum(CAYMAN_FISH_TIDY$DENSITY_INDEX == 3)
+
+
+Whole_Numbers <- 16844+1348+1533+411
+Non_Whole_Numbers <- 22052 -(16844+1348+1533+411) 
+
+```
+
+
+### Response Patterning
+
+```{r}
+# Very Right Skewed/Abnormal Distribution
+ALL_DENSITY <- ggplot(CAYMAN_FISH_TIDY, aes(x = DENSITY_INDEX))+
+  geom_density(alpha = 0.8, fill = "blue", color = "magenta")+
+  xlab("DENSITY INDEX")+
+  ylab("Frequency")+
+  labs(title = "Density Index Distribution for All Observations")
+
+DENSITY_NOZEROS <- ggplot(CAYMAN_NO_ZEROS, aes(x = DENSITY_INDEX))+
+  geom_density(alpha = 0.8, fill = "blue", color = "magenta")+
+  xlab("DENSITY INDEX")+
+  ylab("Frequency")+
+  labs(title = "Density Index Distribution for Non-Zero Observations")
+
+
+grid.arrange(ALL_DENSITY, DENSITY_NOZEROS, ncol=1)
+
+
+```
+
+### Variable Relationships:
+
+```{r}
+#### Zero Violins
+VIOLIN_LOCATION <- ggplot(data=CAYMAN_FISH_TIDY, aes(x=LOCATION, y=DENSITY_INDEX, fill=LOCATION, color=LOCATION)) + 
+  geom_violin(alpha=0.2) + xlab("Location") + ylab("Density Index Value") + ggtitle("Density Index Values by Dive Locations") + stat_summary(fun.y=mean, geom="point", shape=23, size=4)
+
+VIOLIN_RESERVE <- ggplot(data=CAYMAN_FISH_TIDY, aes(x=MARINE_RESERVE, y=DENSITY_INDEX, fill=MARINE_RESERVE, color=MARINE_RESERVE)) + 
+  geom_violin(alpha=0.2) + xlab("Marine Reserve Site (Yes or No)") + ylab("Density Index Value") + ggtitle("Density Index Values for Sites Within VS Outside of Marine Reserves") + stat_summary(fun.y=mean, geom="point", shape=20, size=4)
+
+VIOLIN_DIET <- ggplot(data=CAYMAN_FISH_TIDY, aes(x=DIET, y= DENSITY_INDEX, fill=DIET, color=DIET)) + 
+  geom_violin(alpha=0.2) + xlab("Diet") + ylab("Density Index Value") + ggtitle("Density Index Values by Primary Species Diets") + stat_summary(fun.y=mean, geom="point", shape=12, size=4)
+  
+VIOLIN_FAMILY <- ggplot(data=CAYMAN_FISH_TIDY, aes(x=SCIENTIFIC_FAMILY, y=DENSITY_INDEX, fill=SCIENTIFIC_FAMILY, color=SCIENTIFIC_FAMILY)) + 
+  geom_violin(alpha=0.2) + xlab("Scientific Family") + ylab("Density Index Value") + ggtitle("Density Index Values by Fish Scientific Families") + stat_summary(fun.y=mean, geom="point", shape=15, size=4)
+
+grid.arrange(VIOLIN_LOCATION, VIOLIN_RESERVE, ncol = 1)
+grid.arrange(VIOLIN_DIET, VIOLIN_FAMILY, ncol = 1)
+
+### NON-ZERO VIOLINS
+
+NOZERO_VIOLIN_LOCATION <- ggplot(data=CAYMAN_NO_ZEROS, aes(x=LOCATION, y=DENSITY_INDEX, fill=LOCATION, color=LOCATION)) + 
+  geom_violin(alpha=0.2) + xlab("Location") + ylab("Density Index Value") + ggtitle("Non-Zero Density Index Values by Dive Locations") + stat_summary(fun.y=mean, geom="point", shape=23, size=4)
+
+NOZERO_VIOLIN_RESERVE <- ggplot(data=CAYMAN_NO_ZEROS, aes(x=MARINE_RESERVE, y=DENSITY_INDEX, fill=MARINE_RESERVE, color=MARINE_RESERVE)) + 
+  geom_violin(alpha=0.2) + xlab("Marine Reserve Site (Yes or No)") + ylab("Density Index Value") + ggtitle("Non-Zero Density Index Values for Sites Within VS Outside of Marine Reserves") + stat_summary(fun.y=mean, geom="point", shape=20, size=4)
+
+NOZERO_VIOLIN_DIET <- ggplot(data=CAYMAN_NO_ZEROS, aes(x=DIET, y= DENSITY_INDEX, fill=DIET, color=DIET)) + 
+  geom_violin(alpha=0.2) + xlab("Diet") + ylab("Density Index Value") + ggtitle("Non-Zero Density Index Values by Primary Species Diets") + stat_summary(fun.y=mean, geom="point", shape=12, size=4)
+  
+NOZERO_VIOLIN_FAMILY <- ggplot(data=CAYMAN_NO_ZEROS, aes(x=SCIENTIFIC_FAMILY, y=DENSITY_INDEX, fill=SCIENTIFIC_FAMILY, color=SCIENTIFIC_FAMILY)) + 
+  geom_violin(alpha=0.2) + xlab("Scientific Family") + ylab("Density Index Value") + ggtitle("Non-Zero Density Index Values by Fish Scientific Families") + stat_summary(fun.y=mean, geom="point", shape=15, size=4)
+
+grid.arrange(NOZERO_VIOLIN_LOCATION, NOZERO_VIOLIN_RESERVE, ncol = 1)
+grid.arrange(NOZERO_VIOLIN_DIET, NOZERO_VIOLIN_FAMILY, ncol = 1)
+
+### LATTICE PLOTS
+
+All.Lattice.location <- ggplot(data = CAYMAN_FISH_YEARS, aes(x = YEAR1998, y = DENSITY_INDEX))+ 
+  geom_point(color = "blue")+
+  stat_smooth(method = "lm", color ="firebrick1", se = F)+
+  facet_wrap(~LOCATION)+
+  xlab("Time Since 1998")+ 
+  ylab("Density Index Scores")+ 
+  labs(title = "All Density Index Scores by Location")
+
+NoZero.Lattice.location <- ggplot(data = CAYMAN_NO_ZEROS, aes(x = YEAR1998, y = DENSITY_INDEX))+ 
+  geom_point(color = "blue")+
+  stat_smooth(method = "lm", color ="firebrick1", se = F)+
+  facet_wrap(~LOCATION)+
+  xlab("Time Since 1998")+ 
+  ylab("Density Index Scores")+ 
+  labs(title = "Non-Zero Density Index Scores by Location")
+
+All.Lattice.Reserve <- ggplot(data = CAYMAN_FISH_YEARS, aes(x = YEAR1998, y = DENSITY_INDEX))+ 
+  geom_point(color = "blue")+
+  stat_smooth(method = "lm", color ="firebrick1", se = F)+
+  facet_wrap(~MARINE_RESERVE)+
+  xlab("Time Since 1998")+ 
+  ylab("Density Index Scores")+ 
+  labs(title = "Non-Zero Density Index Scores for Marine Reserve Vs. Non-Reserve Sites")
+
+NoZero.Lattice.Reserve <- ggplot(data = CAYMAN_NO_ZEROS, aes(x = YEAR1998, y = DENSITY_INDEX))+ 
+  geom_point(color = "blue")+
+  stat_smooth(method = "lm", color ="firebrick1", se = F)+
+  facet_wrap(~MARINE_RESERVE)+
+  xlab("Time Since 1998")+ 
+  ylab("Density Index Scores")+ 
+  labs(title = "All Density Index Scores for Marine Reserve Vs. Non-Reserve Sites")
+
+grid.arrange(All.Lattice.location, All.Lattice.Reserve, NoZero.Lattice.location, NoZero.Lattice.Reserve, ncol = 2)
+
+All.Lattice.Diet <- ggplot(data = CAYMAN_FISH_YEARS, aes(x = YEAR1998, y = DENSITY_INDEX))+ 
+  geom_point(color = "blue")+
+  stat_smooth(method = "lm", color ="firebrick1", se = F)+
+  facet_wrap(~DIET)+
+  xlab("Time Since 1998")+ 
+  ylab("Density Index Scores")+ 
+  labs(title = "All Density Index Scores by Diet")
+
+NoZero.Lattice.Diet <- ggplot(data = CAYMAN_NO_ZEROS, aes(x = YEAR1998, y = DENSITY_INDEX))+ 
+  geom_point(color = "blue")+
+  stat_smooth(method = "lm", color ="firebrick1", se = F)+
+  facet_wrap(~DIET)+
+  xlab("Time Since 1998")+ 
+  ylab("Density Index Scores")+ 
+  labs(title = "Non-Zero Density Index Scores by Diet")
+
+All.Lattice.Family <- ggplot(data = CAYMAN_FISH_YEARS, aes(x = YEAR1998, y = DENSITY_INDEX))+ 
+  geom_point(color = "blue")+
+  stat_smooth(method = "lm", color ="firebrick1", se = F)+
+  facet_wrap(~SCIENTIFIC_FAMILY)+
+  xlab("Time Since 1998")+ 
+  ylab("Density Index Scores")+ 
+  labs(title = "All Density Index Scores by Scientific Family")
+
+NoZero.Lattice.Family <- ggplot(data = CAYMAN_NO_ZEROS, aes(x = YEAR1998, y = DENSITY_INDEX))+ 
+  geom_point(color = "blue")+
+  stat_smooth(method = "lm", color ="firebrick1", se = F)+
+  facet_wrap(~SCIENTIFIC_FAMILY)+
+  xlab("Time Since 1998")+ 
+  ylab("Density Index Scores")+ 
+  labs(title = "Non-Zero Density Index Scores by Scientific Family")
+
+grid.arrange(All.Lattice.Diet, All.Lattice.Family, NoZero.Lattice.Diet, NoZero.Lattice.Family, ncol = 2)
+
+All.lattice.Year <- ggplot(data = CAYMAN_FISH_YEARS, aes(x = YEAR1998, y = DENSITY_INDEX))+ 
+  geom_point(color = "blue")+
+  stat_smooth(method = "lm", color ="firebrick1", se = F)+
+  xlab("Time Since 1998")+ 
+  ylab("Density Index Scores")+ 
+  labs(title = "All Density Index Scores Over Time")
+
+NoZero.Lattice.Year <- ggplot(data = CAYMAN_NO_ZEROS, aes(x = YEAR1998, y = DENSITY_INDEX))+ 
+  geom_point(color = "blue")+
+  stat_smooth(method = "lm", color ="firebrick1", se = F)+
+  xlab("Time Since 1998")+ 
+  ylab("Density Index Scores")+ 
+  labs(title = "Non-Zero Desnity Index Scores Over Time")
+
+grid.arrange(All.lattice.Year, NoZero.Lattice.Year)
+
+
+```
+
+
+### Mathematical Summaries
+
+```{r}
+
+### LOCATION SUMMARY
+
+ALL_CAYMAN_FISH_LOCATION <- CAYMAN_FISH_TIDY %>% group_by(LOCATION) %>% dplyr::summarize(MEAN = mean(DENSITY_INDEX), ST.DEV = sd(DENSITY_INDEX), ST.ERR = sd(DENSITY_INDEX)/sqrt(n()), N = n())
+
+NOZERO_CAYMAN_FISH_LOCATION <- CAYMAN_NO_ZEROS %>% group_by(LOCATION) %>% dplyr::summarize(MEAN = mean(DENSITY_INDEX), ST.DEV = sd(DENSITY_INDEX), ST.ERR = sd(DENSITY_INDEX)/sqrt(n()), N = n())
+
+### MARINE RESERVE SUMMARY
+
+ALL_CAYMAN_FISH_RESERVE <- CAYMAN_FISH_TIDY %>% group_by(MARINE_RESERVE) %>% dplyr::summarize(MEAN = mean(DENSITY_INDEX), ST.DEV = sd(DENSITY_INDEX), ST.ERR = sd(DENSITY_INDEX)/sqrt(n()), N = n())
+
+NOZERO_CAYMAN_FISH_RESERVE <- CAYMAN_NO_ZEROS %>% group_by(MARINE_RESERVE) %>% dplyr::summarize(MEAN = mean(DENSITY_INDEX), ST.DEV = sd(DENSITY_INDEX), ST.ERR = sd(DENSITY_INDEX)/sqrt(n()), N = n())
+
+
+### DIET SUMMARY
+
+ALL_CAYMAN_FISH_DIET <- CAYMAN_FISH_TIDY %>% group_by(DIET) %>% dplyr::summarize(MEAN = mean(DENSITY_INDEX), ST.DEV = sd(DENSITY_INDEX), ST.ERR = sd(DENSITY_INDEX)/sqrt(n()), N = n())
+
+NOZERO_CAYMAN_FISH_DIET <- CAYMAN_NO_ZEROS %>% group_by(DIET) %>% dplyr::summarize(MEAN = mean(DENSITY_INDEX), ST.DEV = sd(DENSITY_INDEX), ST.ERR = sd(DENSITY_INDEX)/sqrt(n()), N = n())
+
+### FAMILY SUMMARY
+
+ALL_CAYMAN_FISH_FAMILY <- CAYMAN_FISH_TIDY %>% group_by(SCIENTIFIC_FAMILY) %>% dplyr::summarize(MEAN = mean(DENSITY_INDEX), ST.DEV = sd(DENSITY_INDEX), ST.ERR = sd(DENSITY_INDEX)/sqrt(n()), N = n())
+
+NOZERO_CAYMAN_FISH_FAMILY <- CAYMAN_NO_ZEROS %>% group_by(SCIENTIFIC_FAMILY) %>% dplyr::summarize(MEAN = mean(DENSITY_INDEX), ST.DEV = sd(DENSITY_INDEX), ST.ERR = sd(DENSITY_INDEX)/sqrt(n()), N = n())
+
+### OVERALL 
+
+ALL_CAYMAN_FISH_OVERALL <- CAYMAN_FISH_TIDY %>% dplyr::summarize(MEAN = mean(DENSITY_INDEX), ST.DEV = sd(DENSITY_INDEX), ST.ERR = sd(DENSITY_INDEX)/sqrt(n()), N = n())
+
+NOZERO_CAYMAN_FISH_OVERALL <- CAYMAN_NO_ZEROS %>% dplyr::summarize(MEAN = mean(DENSITY_INDEX), ST.DEV = sd(DENSITY_INDEX), ST.ERR = sd(DENSITY_INDEX)/sqrt(n()), N = n())
+
+### Summary Tables ALL
+
+kable(ALL_CAYMAN_FISH_LOCATION, booktabs = T, 
+      caption = "Overall Summary Statistics for Eleven Dive Sites on Grand Cayman Island",
+      col.names = c("Location", "Mean Density Index", "Standard Deviation", "Standard Error", "Sample Size")) %>%
+  kable_styling(full_width = T)
+
+kable(ALL_CAYMAN_FISH_RESERVE, booktabs = T, 
+      caption = "Overall Summary Statistics for Marine Reserve VS Non-Reserve Sites on Grand Cayman Island",
+      col.names = c("Reserve Type", "Mean Density Index", "Standard Deviation", "Standard Error", "Sample Size")) %>%
+  kable_styling(full_width = T)
+
+kable(ALL_CAYMAN_FISH_DIET, booktabs = T, 
+      caption = "Overall Summary Statistics for Species Primary Diets on Grand Cayman Island",
+      col.names = c("Diet", "Mean Density Index", "Standard Deviation", "Standard Error", "Sample Size")) %>%
+  kable_styling(full_width = T)
+
+kable(ALL_CAYMAN_FISH_FAMILY, booktabs = T, 
+      caption = "Overall Summary Statistics Across Scientific Families on Grand Cayman Island",
+      col.names = c("Family", "Mean Density Index", "Standard Deviation", "Standard Error", "Sample Size")) %>%
+  kable_styling(full_width = T)
+
+kable(ALL_CAYMAN_FISH_OVERALL, booktabs = T, 
+      caption = "Overall Summary Statistics of Density Index on Grand Cayman Island",
+      col.names = c("Mean Density Index", "Standard Deviation", "Standard Error", "Sample Size")) %>%
+  kable_styling(full_width = T)
+
+### No Zeros Summaries
+
+kable(NOZERO_CAYMAN_FISH_LOCATION, booktabs = T, 
+      caption = "Non-Zero Summary Statistics for Eleven Dive Sites on Grand Cayman Island",
+      col.names = c("Location", "Mean Density Index", "Standard Deviation", "Standard Error", "Sample Size")) %>%
+  kable_styling(full_width = T)
+
+kable(NOZERO_CAYMAN_FISH_RESERVE, booktabs = T, 
+      caption = "Non-Zero Summary Statistics for Marine Reserve VS Non-Reserve Sites on Grand Cayman Island",
+      col.names = c("Reserve Type", "Mean Density Index", "Standard Deviation", "Standard Error", "Sample Size")) %>%
+  kable_styling(full_width = T)
+
+kable(NOZERO_CAYMAN_FISH_DIET, booktabs = T, 
+      caption = "Non-Zero Summary Statistics for Species Primary Diets on Grand Cayman Island",
+      col.names = c("Diet", "Mean Density Index", "Standard Deviation", "Standard Error", "Sample Size")) %>%
+  kable_styling(full_width = T)
+
+kable(NOZERO_CAYMAN_FISH_FAMILY, booktabs = T, 
+      caption = "Non-Zero Summary Statistics Across Scientific Families on Grand Cayman Island",
+      col.names = c("Family", "Mean Density Index", "Standard Deviation", "Standard Error", "Sample Size")) %>%
+  kable_styling(full_width = T)
+
+kable(NOZERO_CAYMAN_FISH_OVERALL, booktabs = T, 
+      caption = "Non-Zero Summary Statistics of Density Index on Grand Cayman Island",
+      col.names = c("Mean Density Index", "Standard Deviation", "Standard Error", "Sample Size")) %>%
+  kable_styling(full_width = T)
+
+
+
+```
+
+### Hypothesis Testing
+
+```{r}
+### Hypothesis Tests
+
+# Assumptions of Parametric Statistics:
+
+# INDEPENDENCE:
+
+# Fair to assume samples were independent as they occur across different years and sites. Unlikely they were the same fish surveyed. 
+
+# NORMALITY
+
+# Central Limit Theorum Says that any distribution of n>30 sample size is approximately normal!
+
+# EQUAL VARIANCE
+
+########## Zero-Inclusive
+
+# Null Hypothesis: Variances are approximately equal
+
+# Alternative Hypothesis: Variances are unequal
+
+All_Levene_Location <- leveneTest(DENSITY_INDEX ~ LOCATION, data= CAYMAN_FISH_TIDY)
+
+All_Levene_Reserve <- leveneTest(DENSITY_INDEX ~ MARINE_RESERVE, data= CAYMAN_FISH_TIDY)
+
+All_Levene_Diet <- leveneTest(DENSITY_INDEX ~ DIET, data= CAYMAN_FISH_TIDY)
+  
+All_Levene_Family <- leveneTest(DENSITY_INDEX ~ SCIENTIFIC_FAMILY, data= CAYMAN_FISH_TIDY)
+
+All_Levene_Location
+
+All_Levene_Reserve
+
+All_Levene_Diet
+
+All_Levene_Family
+
+All_Levene_Test <- c("Diet", "Family", "Location", "Reserve")
+
+All_Levene_PVals <- c(0.00000000000000022, 0.00000000000000022, 0.00000000002151, 0.0008255)
+
+All_Levene_Interpret <- c("Unequal Variance", "Unequal Variance", "Unequal Variance", "Unequal Variance")
+
+All_Levene_Results <- as.data.frame(cbind(All_Levene_Test, All_Levene_PVals, All_Levene_Interpret))
+  
+# Non-Zero Levene
+
+NoZero_Levene_Location <- leveneTest(DENSITY_INDEX ~ LOCATION, data= CAYMAN_NO_ZEROS)
+
+NoZero_Levene_Reserve <- leveneTest(DENSITY_INDEX ~ MARINE_RESERVE, data= CAYMAN_NO_ZEROS)
+
+NoZero_Levene_Diet <- leveneTest(DENSITY_INDEX ~ DIET, data= CAYMAN_NO_ZEROS)
+  
+NoZero_Levene_Family <- leveneTest(DENSITY_INDEX ~ SCIENTIFIC_FAMILY, data= CAYMAN_NO_ZEROS)
+
+NoZero_Levene_Location
+
+NoZero_Levene_Reserve
+
+NoZero_Levene_Diet
+
+NoZero_Levene_Family
+
+NoZero_Levene_Test <- c("Diet", "Family", "Location", "Reserve")
+
+NoZero_Levene_PVals <- c(0.000000000008094, 0.00000000000000022, 0.6516, 0.0636)
+
+NoZero_Levene_Interpret <- c("Unequal Variance", "Unequal Variance", "Equal Variance", "Equal Variance")
+
+NoZero_Levene_Results <- as.data.frame(cbind(NoZero_Levene_Test, NoZero_Levene_PVals, NoZero_Levene_Interpret))
+
+NoZero_Levene_Results
+
+### Levene Kable Results
+
+# Zero-Inclusive
+
+kable(All_Levene_Results, booktabs = T, 
+      caption = "Summary of Levene Test Results",
+      col.names = c("Test Variable", "Resulting P-Value", "Interpretation")) %>%
+  kable_styling(full_width = T)
+
+# Non-Zero
+
+kable(NoZero_Levene_Results, booktabs = T, 
+      caption = "Non-Zero Data Summary of Levene Test Results",
+      col.names = c("Test Variable", "Resulting P-Value", "Interpretation")) %>%
+  kable_styling(full_width = T)
+
+
+### ANOVA and T-Test
+
+# Null Hypothesis: Means are approximately equal
+
+# Alternative Hypothesis: Means are different
+
+All_ANOVA_Location <- oneway.test(DENSITY_INDEX ~ LOCATION, data= CAYMAN_FISH_TIDY)
+
+All_T_Reserve <- t.test(DENSITY_INDEX ~ MARINE_RESERVE, data= CAYMAN_FISH_TIDY)
+
+All_ANOVA_Diet <- oneway.test(DENSITY_INDEX ~ DIET, data= CAYMAN_FISH_TIDY)
+  
+All_ANOVA_Family <- oneway.test(DENSITY_INDEX ~ SCIENTIFIC_FAMILY, data= CAYMAN_FISH_TIDY)
+
+All_ANOVA_Location
+
+All_T_Reserve
+
+All_ANOVA_Diet
+
+All_ANOVA_Family
+
+All_TANOVA_Test <- c("Diet", "Family", "Location", "Reserve")
+
+All_Test_Type <- c("Welch ANOVA", "Welch ANOVA", "Welch ANOVA", "Welch T-Test")
+
+All_TANOVA_PVals <- c(0.00000000000000022, 0.00000000000000022, 0.000000000001144, 0.0007742)
+
+All_Result_Interpret <- c("True Mean Difference Not 0", "True Mean Difference Not 0", "True Mean Difference Not 0", "True Mean Difference Not 0")
+
+All_TANOVA_Results <- as.data.frame(cbind(All_TANOVA_Test, All_Test_Type, All_TANOVA_PVals, All_Result_Interpret))
+  
+# Non-Zero Levene
+
+NoZero_ANOVA_Location <- aov(DENSITY_INDEX ~ LOCATION, data= CAYMAN_NO_ZEROS)
+
+NoZero_T_Reserve <- t.test(DENSITY_INDEX ~ MARINE_RESERVE, data= CAYMAN_NO_ZEROS, var.equal = T)
+
+NoZero_ANOVA_Diet <- oneway.test(DENSITY_INDEX ~ DIET, data= CAYMAN_NO_ZEROS)
+  
+NoZero_ANOVA_Family <- oneway.test(DENSITY_INDEX ~ SCIENTIFIC_FAMILY, data= CAYMAN_NO_ZEROS)
+
+summary(NoZero_ANOVA_Location)
+
+NoZero_T_Reserve
+
+NoZero_ANOVA_Diet
+
+NoZero_ANOVA_Family
+
+NoZero_TANOVA_Test <- c("Diet", "Family", "Location", "Reserve")
+
+NoZero_Test_Type <- c("Welch ANOVA", "Welch ANOVA", "Standard ANOVA", "Equal Variance T-Test")
+
+NoZero_TANOVA_PVals <- c(0.00000000000000022, 0.00000000000000022, 0.317, 0.5413)
+
+NoZero_Result_Interpret <- c("True Mean Difference Not 0", "True Mean Difference Not 0", "True Mean Difference = 0", "True Mean Difference = 0")
+
+NoZero_TANOVA_Results <- as.data.frame(cbind(NoZero_TANOVA_Test, NoZero_Test_Type, NoZero_TANOVA_PVals, NoZero_Result_Interpret))
+
+NoZero_TANOVA_Results
+
+### TANOVA Kable Results
+
+# Zero-Inclusive
+
+kable(All_TANOVA_Results, booktabs = T, 
+      caption = "Summary of ANOVA and T-Test Results",
+      col.names = c("Test Variable", "Test Type", "Resulting P-Value", "Interpretation")) %>%
+  kable_styling(full_width = T)
+
+# Non-Zero
+
+kable(NoZero_TANOVA_Results, booktabs = T, 
+      caption = "Non-Zero Data Summary of ANOVA and T-Test Results",
+      col.names = c("Test Variable", "Test Type", "Resulting P-Value", "Interpretation")) %>%
+  kable_styling(full_width = T)
+```
+
+### Slope Investigation Plots
+
+```{r}
+### Year as a random slope?
+
+CAYMAN_NO_ZEROS <- CAYMAN_NO_ZEROS %>% dplyr::select(DENSITY_INDEX, FISH_ID, SPECIES_NAME, SCIENTIFIC_FAMILY, DIET, LOCATION, MARINE_RESERVE, YEAR1998)
+
+SPECIES_SUBSET <- CAYMAN_NO_ZEROS[1:530, ] 
+
+# Individual Species Plot
+
+ggplot(SPECIES_SUBSET, aes(x = YEAR1998, y = DENSITY_INDEX))+
+  geom_point(color = "blue")+
+  facet_wrap(~SPECIES_NAME, ncol = 4)+
+  geom_smooth(aes(group = 1), color = "firebrick1", size = 1, se = F)+
+  labs(x = "Years since 1998", y = "Density Index")+
+  ylim(0,4)
+
+# Overall Slopes Plot
+
+ggplot(CAYMAN_NO_ZEROS, aes(x = YEAR1998, y = DENSITY_INDEX))+
+  geom_line(aes(group = FISH_ID), color = "grey")+
+  facet_wrap(~LOCATION)+
+  geom_smooth(aes(group = 1), color = "blue", size = 1)+
+  labs(x = "Years since 1998", y = "Density Index", title = "                                                               Average Density Index Slope Across All Years and Observations by 
+                                                Compared Against Density Index Slopes For Individual Species Across All Years")+
+  ylim(0,4)
+  
+```
+
+#### INTERACTION CHECK
+
+```{r}
+### Check for interaction
+
+interaction.nozero.cayman.diet <- ggplot(CAYMAN_NO_ZEROS, aes(x = YEAR1998, y = DENSITY_INDEX, colour = DIET)) + geom_point() + geom_smooth(aes(linetype = DIET), method = lm, se = FALSE) + ylab("Density Index Scores") + xlab("Year of Data Collection") 
+
+interaction.nozero.cayman.diet
+
+interaction.nozero.cayman.location <- ggplot(CAYMAN_NO_ZEROS, aes(x = YEAR1998, y = DENSITY_INDEX, colour = LOCATION)) + geom_point() + geom_smooth(aes(linetype = LOCATION), method = lm, se = FALSE) + ylab("Density Index Scores") + xlab("Year of Data Collection") 
+
+interaction.nozero.cayman.location
+
+interaction.nozero.cayman.reserve <- ggplot(CAYMAN_NO_ZEROS, aes(x = YEAR1998, y = DENSITY_INDEX, colour = MARINE_RESERVE)) + geom_point() + geom_smooth(aes(linetype = MARINE_RESERVE), method = lm, se = FALSE) + ylab("Density Index Scores") + xlab("Year of Data Collection") 
+
+interaction.nozero.cayman.reserve
+
+interaction.nozero.cayman.family <- ggplot(CAYMAN_NO_ZEROS, aes(x = YEAR1998, y = DENSITY_INDEX, colour = SCIENTIFIC_FAMILY)) + geom_point() + geom_smooth(aes(linetype = SCIENTIFIC_FAMILY), method = lm, se = FALSE) + ylab("Density Index Scores") + xlab("Year of Data Collection") 
+
+interaction.nozero.cayman.family
+
+
+grid.arrange(interaction.nozero.cayman.family, interaction.nozero.cayman.diet, ncol = 2)
+
+```
+
+
+
+
+### MODELING WITH TWO PARTS
+
+#### LOGISTIC REGRESSION PORTION 
+
+```{r}
+### BUILDING THE TWO PART MODEL:
+
+# First, a dataset which contains 0 or 1 for observations without or with a density index score must be made. To do this, a mutation is performed on the tidy data. 
+
+CAYMAN_LOGISTIC_DATA <- CAYMAN_FISH_TIDY %>% mutate(DENSITY_INDEX = if_else(DENSITY_INDEX == 0, 0, 1))
+
+
+CAYMAN_LOGISTIC_DATA <- CAYMAN_LOGISTIC_DATA %>% dplyr::select(-c(SPECIES_NAME, FISH_ID))
+
+summary(CAYMAN_LOGISTIC_DATA)
+
+sum(CAYMAN_LOGISTIC_DATA$DENSITY_INDEX == 0)
+
+# Complete Model
+
+LOGI_CAYMAN_1 <- glm(data=CAYMAN_LOGISTIC_DATA, DENSITY_INDEX ~ ., family = binomial(link = "logit"))
+
+summary(LOGI_CAYMAN_1)
+
+## Remove Marine Reserve Due to Multicolinearity
+
+FINAL_LOGI_CAYMAN <- glm(data=CAYMAN_LOGISTIC_DATA, DENSITY_INDEX ~ SCIENTIFIC_FAMILY, family = binomial(link = "logit"))
+
+summary(FINAL_LOGI_CAYMAN)
+
+### Estimated Non-Zero Probabilities
+
+exp(-2.18)/(1+exp(-2.18))
+
+exp(-2.18 + 0.58481)/(1+exp(-2.18 + 0.58481))
+
+exp(-2.18 + 2.21810)/(1+exp(-2.18 + 2.21810))
+
+exp(-2.18 + 1.15606)/(1+exp(-2.18 + 1.15606))
+
+exp(-2.18 + 1.38316)/(1+exp(-2.18 + 1.38316))
+
+exp(-2.18 + 1.01748)/(1+exp(-2.18 + 1.01748))
+
+exp(-2.18 + 2.17520)/(1+exp(-2.18 + 2.17520))
+
+exp(-2.18 + 1.58743)/(1+exp(-2.18 + 1.58743))
+
+exp(-2.18 + 0.77282)/(1+exp(-2.18 + 0.77282))
+```
+
+### KABLES FOR LOGISTIC OUTPUTS
+
+```{r}
+
+LogiFamily_Name <- c("Apogonidae", "Carangidae", "Gobiidae", "Sparidae", "Haemulidae", "Holocentridae", "Labridae", "Lutjanidae", "Pomacentridae", "Scaridae", "Serranidae", "Other")
+
+LogiModel_Pval <- c("2e-16", "0.683", "0.266", "0.351", "0.000229", "2e-16", "9.14e-14", "2e-16", "1.86e-12", "2e-16", "2e-16", "2.71e-7")
+
+LogiProbability_NonZero <- c("0.102 (10.2%)", "0.102 (10.2%)", "0.102 (10.2%)", "0.102 (10.2%)", "0.169 (16.9%)", "0.510 (51.0%)*", "0.264 (26.4%)*", "0.311 (31.1%)*", "0.499 (49.9%)*", "0.356 (35.6%)*", "0.197 (19.7%)*", "0.238 (23.8%)*")
+
+
+
+LOGISTIC_INTERPRETATIONS <- as.data.frame(cbind(LogiFamily_Name, LogiModel_Pval, LogiProbability_NonZero)) 
+
+
+### KABLES FOR THESE SPECIES
+
+
+kable(LOGISTIC_INTERPRETATIONS, booktabs = T, 
+      caption = "Logistic Regression Probabilities of Non-Zero Observations By Families",
+      col.names = c("Family", "Model P-Value", "Probability Non-Zero")) %>%
+  kable_styling(full_width = T)
+
+```
+
+
+#### LINEAR MIXED EFFECT
+
+How has density index values changed over time on Grand Cayman Island?
+How do density index values vary across dive sites?
+
+```{r, warning = FALSE}
+
+### REMEMBER
+
+# We are not interested in these specific fish, but rather we are interested in the density indexes for the families at these locations over time. Thus, the species are considered random effects (fit using (1  | variable name))
+
+# The variables we want to investigate differences in are called fixed effects (LOCATION, YEAR1998, SCIENTIFIC_FAMILIES)
+
+# WE MAY ALSO NOT BE INTERESTED IN THE FAMILIES, BUT RATHER JUST THE DIFFERENCE OVER TIME.
+
+# Accounting for random effects allows us to accurately calculate standard errors associated with fixed effects. FISH_ID, POSSIBLY SCIENTIFIC_FAMILY!
+
+# Fixed Effects table represents our usual linear model table outputs
+
+# We get residual errors (sigma) and other errors (like sigmaU)
+
+# FOR INSTANCE: We estimate that the standard deviation in differences in density index scores between species within the same family, after accounting for...., is SIGMA
+
+# FOR INSTANCE: We estimate that the standard deviation in differences in density index scores between species of different families, after accounting for...., is SIGMAU
+
+# If we use linear mixed effect, we eliminate the need to use the SCIENTIFIC_FAMILY variable! (AS WE DID in the standard linear model)
+# This would bring us from 23 to 12 Betas. Each time we estimate an additional beta, we lose a degree of freedom, which ultimately makes estimates and predictions less precise so this is good news!
+# We can tell some things about these specific families already, but it is not necessarily necessary when looking for overall trends over time. 
+
+# Error terms account for the fact that our predictions are not always 100% accurate, we always have some range of variability.
+
+
+CAYMAN_NO_ZEROS$YEAR1998 <- as.factor(CAYMAN_NO_ZEROS$YEAR1998)
+
+### LONGITUDINAL DATA
+
+
+# Observations that change over time = Level One (DENSITY INDEX, YEAR1998
+
+# Observations that pertain to a species and stay constant over time (Scientific Family, LOCATION))
+
+CAYMAN_NO_ZEROS$YEAR1998 <- as.numeric(CAYMAN_NO_ZEROS$YEAR1998)
+
+CAYMAN_NO_ZEROS <- CAYMAN_NO_ZEROS %>% dplyr::select(SPECIES_NAME, FISH_ID, SCIENTIFIC_FAMILY, DIET, LOCATION, MARINE_RESERVE, DENSITY_INDEX, YEAR1998)
+
+
+##### UNCONDITIONAL MEANS COMPARING VARIABILITY WITHIN SPECIES TO VARIABILITY BETWEEN THEM!
+
+# Yij = Density Index for species i and year j
+
+# Yij = alpha0 + Ui + EPSILONij with Ui ~ N(0,sigma^2 sub U) and EPSILONij ~ N(0,sigma^2)
+
+# Ui is the intercept for species
+# Eij is for the same species
+# Grouping Effect is species
+
+Unconditional_Mean <- lmer(DENSITY_INDEX ~ 1 + (1|SPECIES_NAME), REML = T, data = CAYMAN_NO_ZEROS)
+
+summary(Unconditional_Mean)
+
+## FINDINGS
+
+
+# More variability within the same species compared to between species
+# Sigma =  0.5148, SigmaU = 0.4409
+# The estimated Density Index Value Across All Families and All Years is 1.73540! FEW on REEF
+# SigmaU = 0.4409, the standard deviation in density index values between species (Averaged across the 10 years) tells us average  difference
+# Sigma =  0.5148, the standard deviation in density index values within a species year by year (not a total averaged difference like sigma)
+
+### INTRACLASS CORRELATION COEFFICIENT
+
+# uses variances from model! P = sigma^2u/(sigma^2u + sigma^2)
+
+ICC <- 0.1944/(0.1944 + 0.2650)
+
+ICC
+
+# ICC= 0.423. Meaning 42.3% of the total variation in density index values is attributed to differences between species rather than changes over time within species. We account for this variability by using FISH_ID as a random effect in LMER. 
+# Average correlation for any pair of responses from the same species is 0.423 not extremely strong.
+```
+
+
+### Unconditional Growth Model
+
+\[
+Y_{ij}=\alpha_{0} + \beta_{0}\textrm{Year2013}_{ij}+u_{i}+v_{i}\textrm{Year2013}_{ij} + \epsilon_{ij}
+\]
+
+#### where $\epsilon_{ij}\sim N(0,\sigma^2)$ and
+
+\[
+ \left[ \begin{array}{c}
+            u_{i} \\ v_{i}
+          \end{array}  \right] \sim N \left( \left[
+          \begin{array}{c}
+            0 \\ 0
+          \end{array} \right], \left[
+          \begin{array}{cc}
+            \sigma_{u}^{2} & \\
+            \rho_{uv}\sigma_{u}\sigma_{u} & \sigma_{v}^{2}
+          \end{array} \right] \right) . 
+\]
+
+```{r}
+
+# Covariate at level one is time! This is the only explanatory variable
+# Allows for the assessment of how much of the within species can be attributed to systematic changes over time
+# Random Slope allows for change in DI year to year between species
+
+# Let Yij be the DI value for the ith species in the jth year, then:
+
+# Yij = a0 + B0Year98ij + Ui + ViYear98ij + EPSILONij
+# See Above for rest of variance covariance structure
+
+# ViYear98ij is the random slope term! How does yearly slopes for species vary from the average slope!
+# a0is average DI value in 1998
+# B0Year98ij is the slope relating DI values to time, the mean change in DI values from one year to the next
+# Ui is a random effect capturing how much each individual species DI value average from 1998 varies from the overall 1998 average
+
+# sigma U quantifies the amount of variability between DI values of different species in 1998
+# sigma V quantifies the amount of variability in average year to year change between species
+# sigma quantifies the variability in DI values within the same species
+
+Unconditional_Growth <- lmer(DENSITY_INDEX ~ YEAR1998 + (YEAR1998|SPECIES_NAME), REML = T, data = CAYMAN_NO_ZEROS)
+
+summary(Unconditional_Growth)
+
+# WE CANNOT DIRECTLY COMPARE SIGMAU TO SIGMAV!
+
+### Random Effects
+
+# sigmaHATu = 0.51409 the standard deviation in DI values between species in 1998 
+# sigmaHATv = 0.01943 the standard deviation in rates of change in DI values during the 20 year observation period
+# sigmaHAT = 0.50336 the standard deviation in DI values within the same species
+# pHATuv = -0.54 the correlation in species' 1998 DI value and their rate of change in DI values between 1998 and 2018 MODERATE NEGATIVE RELATIONSHIP (One increases as the other decreases)
+# The higher your 1998 DI value, the more negative the slope decrease from year to year
+
+# SPECIES HAD A MEAN DI of 1.834651 in 1998, and THEIR MEAN DI values tended to decrease each year for the observation period (-0.007820), THUS, species with higher 1998 DI values saw LARGER DECREASES in DI values than those with lower 1998 DI values. 
+
+### Fixed Effects
+
+# alphaHAT0 = 1.834651 Average DI in 1998 for the entire population of species 
+#**** BetaHAT0 = -0.007820 mean yearly change in DI values for the population during the 10 years of observations
+
+
+```
+
+### Building The Best Interpretation Model
+
+```{r}
+# Baseline Model
+
+M1_LMER <- lmer(DENSITY_INDEX ~ 1 + (1|SPECIES_NAME), REML = T, data = CAYMAN_NO_ZEROS)
+
+### Compare Adding Year with Maximum Likelihood Test
+
+# SIGNIFICANTLY BETTER!
+
+add1(M1_LMER, scope = ~ YEAR1998, test = "Chisq")
+
+### Add Year As Explanatory
+
+M2_LMER <- lmer(DENSITY_INDEX ~ YEAR1998 + (1|SPECIES_NAME), REML = T, data = CAYMAN_NO_ZEROS)
+
+### Compare Adding all the other variables
+
+add1(M2_LMER, scope = ~ YEAR1998 + DIET + SCIENTIFIC_FAMILY + LOCATION + MARINE_RESERVE, test = "Chisq")
+
+### DIET AND SCIENTIFIC FAMILIES ARE SIGNIFICANT ADDITIONS!!!!
+
+### NOW ADD THEM TO THE MODEL AND TEST INTERACTIONS
+
+M3_LMER <- lmer(DENSITY_INDEX ~ YEAR1998 + DIET + SCIENTIFIC_FAMILY + (1|SPECIES_NAME), REML = T, data = CAYMAN_NO_ZEROS)
+
+### Test Interactions
+
+add1(M3_LMER, scope = ~ YEAR1998*DIET + YEAR1998*SCIENTIFIC_FAMILY, test = "Chisq")
+
+### SIGNIGICANT INTERACTION IN YEAR1998 and SCIENTIFIC_FAMILY
+
+# FIT THE MODEL AND THEN TEST ADDING RANDOM SLOPES FOR YEAR1998
+
+M4_LMER <- lmer(DENSITY_INDEX ~ YEAR1998 + DIET + SCIENTIFIC_FAMILY + YEAR1998*SCIENTIFIC_FAMILY + (1|SPECIES_NAME), REML = T, data = CAYMAN_NO_ZEROS)
+
+M5_LMER <- lmer(DENSITY_INDEX ~ YEAR1998 + DIET + SCIENTIFIC_FAMILY + YEAR1998*SCIENTIFIC_FAMILY + (YEAR1998|SPECIES_NAME), REML = T, data = CAYMAN_NO_ZEROS)
+
+AIC(M4_LMER, M5_LMER)
+
+M6_LMER <- lmer(DENSITY_INDEX ~ YEAR1998 + DIET + SCIENTIFIC_FAMILY + (YEAR1998|SPECIES_NAME), REML = T, data = CAYMAN_NO_ZEROS)
+
+AIC(M3_LMER, M6_LMER)
+
+AIC(M5_LMER, M6_LMER)
+
+#### Check the summary of the plot then bootstrap accordingly
+
+summary(Unconditional_Mean)
+summary(Unconditional_Growth)
+summary(M6_LMER)
+summary(M5_LMER)
+
+### FINAL MODEL = M6_LMER, Check assumptions plot
+
+plot(M6_LMER)
+
+qqnorm(resid(M6_LMER))
+qqline(resid(M6_LMER))
+
+
+#### Final Model Interpretations
+
+# RANDOM EFFECTS:
+
+# Sigma = 0.50409, The Standard deviation in density index scores of a single species
+# Sigma u = 0.46129 The standard deviation in density index scores between all species in 2008
+# Sigma v = 0.01923 The standard deviation in average year-to-year rates of change in slope between species (Not surprising this is low, slopes smaller than individual scores)
+# Row Sub UV = -0.62 correlation in species 1998 density index score and their rate of change in density index scores between 1998 and 2018. ON AVERAGE species with higher 1998 density index scores saw greater decreases in rates of change in their slope between 1998 and 2018
+# B1 is negative (relates density index to time), and Row Sub UV is also negative, therefore on average, density index scores decreased from 1998 to 2018, and species with higher 1998 density index scores saw greater decreases in rates of change in their slope between 1998 and 2018.
+
+
+# FIXED EFFECTS: Only for significant differences at 0.10 alpha!
+
+# (Intercept), B0 = 1.915148, P = 6.60e-14 *** expected density index score in 1998 for the family "Apogonidae" with a diet of "Algae"
+# YEAR1998, B1 = -0.008237, P = 8.19e-05 *** average decrease in density index per year
+# DIETEchinoids, B4 = -0.483278, P = 0.0488 * expected difference in baseline (1998) density index scores for fish feeding on Echinoids compared to fish feeding on Algae
+# DIETFish, B5 = -0.298701, P = 0.0387 *, expected difference in baseline (1998) density index scores for fish feeding on other fish (Carnivorous) compared to fish feeding on Algae
+# DIETSponges, B6 = -0.351591, P = 0.0161 *, expected difference in baseline (1998) density index scores for fish feeding on sponges compared to fish feeding on Algae
+# DIETUnidentified, B7 = -0.287394, P = 0.0342 *, expected difference in baseline (1998) density index scores for fish feeding on unidentified diets compared to fish feeding on Algae
+# DIETZooplankton, B8 = 0.257617, P = 0.0922 .,expected difference in baseline (1998) density index scores for fish feeding on zooplankton compared to fish feeding on Algae
+# SCIENTIFIC_FAMILYGobiidae, B10 = 0.416462, P = 0.0788 ., expected difference in baseline (1998) density index scores for Gobiidae compared to Apogonidae
+# SCIENTIFIC_FAMILYHolocentridae, B12 = 0.492670, P = 0.0726 ., expected difference in baseline (1998) density index scores for Holocentridae compared to Apogonidae
+# SCIENTIFIC_FAMILYPomacentridae, B16 = 0.499964, P = 0.0441 *, expected difference in baseline (1998) density index scores for Pomacentridae compared to Apogonidae
+
+# All others have insignificant P-Values, thus, there is no mean difference in density index values between them.
+
+
+
+```
+
+
+
+
+
+### K Means Clustering
+
+```{r}
+
+
+### 1998
+
+YEAR_98 <- CAYMAN_FISH_TIDY %>% filter(YEAR == 1998) %>% dplyr::select(-c(FISH_ID, LOCATION, YEAR, SCIENTIFIC_FAMILY)) %>% group_by(SPECIES_NAME) %>% summarise(MEAN_YEARLY_DI = mean(DENSITY_INDEX), N_Sites = n())
+
+YEAR_98$N_Sites <- as.numeric(YEAR_98$N_Sites)
+
+Scaled_98 <-  data.frame(YEAR_98) %>% dplyr::select(-c(SPECIES_NAME)) %>% scale()
+
+YEAR_98_CLASSIFY <- data.frame(YEAR_98)
+
+### 2000
+
+YEAR_00 <- CAYMAN_FISH_TIDY %>% filter(YEAR == 2000) %>% dplyr::select(-c(FISH_ID, LOCATION, YEAR, SCIENTIFIC_FAMILY)) %>% group_by(SPECIES_NAME) %>% summarise(MEAN_YEARLY_DI = mean(DENSITY_INDEX), N_Sites = n())
+
+YEAR_00$N_Sites <- as.numeric(YEAR_00$N_Sites)
+
+Scaled_00 <-  data.frame(YEAR_00) %>% dplyr::select(-c(SPECIES_NAME)) %>% scale()
+
+YEAR_00_CLASSIFY <- data.frame(YEAR_00)
+
+### 2002
+
+YEAR_02 <- CAYMAN_FISH_TIDY %>% filter(YEAR == 2002) %>% dplyr::select(-c(FISH_ID, LOCATION, YEAR, SCIENTIFIC_FAMILY)) %>% group_by(SPECIES_NAME) %>% summarise(MEAN_YEARLY_DI = mean(DENSITY_INDEX), N_Sites = n())
+
+YEAR_02$N_Sites <- as.numeric(YEAR_02$N_Sites)
+
+Scaled_02 <- data.frame(YEAR_02) %>% dplyr::select(-c(SPECIES_NAME)) %>% scale()
+
+YEAR_02_CLASSIFY <- data.frame(YEAR_02)
+
+### 2004
+
+YEAR_04 <- CAYMAN_FISH_TIDY %>% filter(YEAR == 2004) %>% dplyr::select(-c(FISH_ID, LOCATION, YEAR, SCIENTIFIC_FAMILY)) %>% group_by(SPECIES_NAME) %>% summarise(MEAN_YEARLY_DI = mean(DENSITY_INDEX), N_Sites = n())
+
+YEAR_04$N_Sites <- as.numeric(YEAR_04$N_Sites)
+
+Scaled_04 <-  data.frame(YEAR_04) %>% dplyr::select(-c(SPECIES_NAME)) %>% scale()
+
+YEAR_04_CLASSIFY <- data.frame(YEAR_04)
+
+### 2006
+
+YEAR_06 <- CAYMAN_FISH_TIDY %>% filter(YEAR == 2006) %>% dplyr::select(-c(FISH_ID, LOCATION, YEAR, SCIENTIFIC_FAMILY)) %>% group_by(SPECIES_NAME) %>% summarise(MEAN_YEARLY_DI = mean(DENSITY_INDEX), N_Sites = n())
+
+YEAR_06$N_Sites <- as.numeric(YEAR_06$N_Sites)
+
+Scaled_06 <-  data.frame(YEAR_06) %>% dplyr::select(-c(SPECIES_NAME)) %>% scale()
+
+YEAR_06_CLASSIFY <- data.frame(YEAR_06)
+
+### 2008
+
+YEAR_08 <- CAYMAN_FISH_TIDY %>% filter(YEAR == 2008) %>% dplyr::select(-c(FISH_ID, LOCATION, YEAR, SCIENTIFIC_FAMILY)) %>% group_by(SPECIES_NAME) %>% summarise(MEAN_YEARLY_DI = mean(DENSITY_INDEX), N_Sites = n())
+
+YEAR_08$N_Sites <- as.numeric(YEAR_08$N_Sites)
+
+Scaled_08 <-  data.frame(YEAR_08) %>% dplyr::select(-c(SPECIES_NAME)) %>% scale()
+
+YEAR_08_CLASSIFY <- data.frame(YEAR_08)
+
+### 2010
+
+YEAR_10 <- CAYMAN_FISH_TIDY %>% filter(YEAR == 2010) %>% dplyr::select(-c(FISH_ID, LOCATION, YEAR, SCIENTIFIC_FAMILY)) %>% group_by(SPECIES_NAME) %>% summarise(MEAN_YEARLY_DI = mean(DENSITY_INDEX), N_Sites = n())
+
+YEAR_10$N_Sites <- as.numeric(YEAR_10$N_Sites)
+
+Scaled_10 <-  data.frame(YEAR_10) %>% dplyr::select(-c(SPECIES_NAME)) %>% scale()
+
+YEAR_10_CLASSIFY <- data.frame(YEAR_10)
+
+### 2012
+
+YEAR_12 <- CAYMAN_FISH_TIDY %>% filter(YEAR == 2012) %>% dplyr::select(-c(FISH_ID, LOCATION, YEAR, SCIENTIFIC_FAMILY)) %>% group_by(SPECIES_NAME) %>% summarise(MEAN_YEARLY_DI = mean(DENSITY_INDEX), N_Sites = n())
+
+YEAR_12$N_Sites <- as.numeric(YEAR_12$N_Sites)
+
+Scaled_12 <-  data.frame(YEAR_12) %>% dplyr::select(-c(SPECIES_NAME)) %>% scale()
+
+YEAR_12_CLASSIFY <- data.frame(YEAR_12)
+
+### 2014
+
+YEAR_14 <- CAYMAN_FISH_TIDY %>% filter(YEAR == 2014) %>% dplyr::select(-c(FISH_ID, LOCATION, YEAR, SCIENTIFIC_FAMILY)) %>% group_by(SPECIES_NAME) %>% summarise(MEAN_YEARLY_DI = mean(DENSITY_INDEX), N_Sites = n())
+  
+YEAR_14$N_Sites <- as.numeric(YEAR_14$N_Sites)
+
+Scaled_14 <-  data.frame(YEAR_14) %>% dplyr::select(-c(SPECIES_NAME)) %>% scale()
+
+YEAR_14_CLASSIFY <- data.frame(YEAR_14)
+### 2016
+
+YEAR_16 <- CAYMAN_FISH_TIDY %>% filter(YEAR == 2016) %>% dplyr::select(-c(FISH_ID, LOCATION, YEAR, SCIENTIFIC_FAMILY)) %>% group_by(SPECIES_NAME) %>% summarise(MEAN_YEARLY_DI = mean(DENSITY_INDEX), N_Sites = n())
+
+YEAR_16$N_Sites <- as.numeric(YEAR_16$N_Sites)
+
+Scaled_16 <-  data.frame(YEAR_16) %>% dplyr::select(-c(SPECIES_NAME)) %>% scale()
+
+YEAR_16_CLASSIFY <- data.frame(YEAR_16)
+
+### 2018
+
+YEAR_18 <- CAYMAN_FISH_TIDY %>% filter(YEAR == 2018) %>% dplyr::select(-c(FISH_ID, LOCATION, YEAR, SCIENTIFIC_FAMILY)) %>% group_by(SPECIES_NAME) %>% summarise(MEAN_YEARLY_DI = mean(DENSITY_INDEX), N_Sites = n())
+
+YEAR_18$N_Sites <- as.numeric(YEAR_18$N_Sites)
+
+Scaled_18 <-  data.frame(YEAR_18) %>% dplyr::select(-c(SPECIES_NAME)) %>% scale()
+
+YEAR_18_CLASSIFY <- data.frame(YEAR_18)
+
+```
+
+
+### 1998 K-MEANS
+
+```{r}
+# 1998 Visualization
+# Use K = 4
+K_98 <- fviz_nbclust(Scaled_98, FUNcluster = kmeans, method = "wss", k.max = 25)+ labs(title = "Optimal Number of Cluster 1998")
+
+km_98 <- kmeans(Scaled_98, centers = 4, nstart = 25)
+
+print(km_98)
+
+VIZ_98 <- fviz_cluster(km_98, Scaled_98, geom = "point", ellipse.type = "convex")+ labs(title = "1998")
+
+VIZ_98
+
+CLUSTER_SIZE_98 <- km_98$size
+
+CLUSTER_SIZE_98
+
+# Reversions for Interpreting
+
+YEAR_98_SUMMARY <- YEAR_98 %>% summarise(MEAN_DI = mean(MEAN_YEARLY_DI), SD_DI = sd(MEAN_YEARLY_DI), MEAN_SITES = mean(N_Sites), SD_SITES = sd(N_Sites))
+
+YEAR_98_SUMMARY
+
+YEAR_98_CENTERS <- as.data.frame(km_98$centers)
+
+YEAR_98_UNSCALED <- YEAR_98_CENTERS %>% mutate(DI_CENTERS = ((MEAN_YEARLY_DI * 0.7007888) + 0.4128344), SITES_CENTERS = ((N_Sites * 0.1677994) + 4.979675)) 
+
+YEAR_98_UNSCALED <- cbind(YEAR_98_UNSCALED, CLUSTER_SIZE_98)
+
+YEAR_98_UNSCALED
+
+CLASSIFY_98 <- cbind(YEAR_98_CLASSIFY, cluster = km_98$cluster)
+
+head(CLASSIFY_98)
+
+UNSCALED_98_CENTERS <- YEAR_98_UNSCALED %>% dplyr::select(DI_CENTERS, SITES_CENTERS, MEAN_YEARLY_DI, N_Sites)
+
+
+
+```
+
+### 2000 K-Means
+
+```{r}
+# 2000 Visualization
+# Use K = 4
+K_00 <- fviz_nbclust(Scaled_00, FUNcluster = kmeans, method = "wss", k.max = 25)+ labs(title = "Optimal Number of Cluster 2000")
+
+km_00 <- kmeans(Scaled_00, centers = 4, nstart = 25)
+
+print(km_00)
+
+VIZ_00 <- fviz_cluster(km_00, Scaled_00, geom = "point", ellipse.type = "convex")+ labs(title = "2000")
+
+CLUSTER_SIZE_00 <- km_00$size
+
+CLUSTER_SIZE_00
+
+# Reversions for Interpreting
+
+YEAR_00_SUMMARY <- YEAR_00 %>% summarise(MEAN_DI = mean(MEAN_YEARLY_DI), SD_DI = sd(MEAN_YEARLY_DI), MEAN_SITES = mean(N_Sites), SD_SITES = sd(N_Sites))
+
+YEAR_00_SUMMARY
+
+YEAR_00_CENTERS <- as.data.frame(km_00$centers)
+
+YEAR_00_UNSCALED <- YEAR_00_CENTERS %>% mutate(DI_CENTERS = ((MEAN_YEARLY_DI * 0.7046726) + 0.3380778), SITES_CENTERS = ((N_Sites * 0.191273) + 7.987805)) 
+
+YEAR_00_UNSCALED <- cbind(YEAR_00_UNSCALED, CLUSTER_SIZE_00)
+
+YEAR_00_UNSCALED
+
+
+
+CLASSIFY_00 <- cbind(YEAR_00_CLASSIFY, cluster = km_00$cluster)
+
+head(CLASSIFY_00)
+
+UNSCALED_00_CENTERS <- YEAR_00_UNSCALED %>% dplyr::select(DI_CENTERS, SITES_CENTERS, MEAN_YEARLY_DI, N_Sites)
+
+```
+
+### 2002 K-Means
+
+```{r}
+# 2002 Visualization
+# Use K = 4
+K_02 <- fviz_nbclust(Scaled_02, FUNcluster = kmeans, method = "wss", k.max = 25)+ labs(title = "Optimal Number of Cluster 2002")
+
+km_02 <- kmeans(Scaled_02, centers = 4, nstart = 25)
+
+print(km_02)
+
+VIZ_02 <- fviz_cluster(km_02, Scaled_02, geom = "point", ellipse.type = "convex")+ labs(title = "2002")
+
+CLUSTER_SIZE_02 <- km_02$size
+
+CLUSTER_SIZE_02
+
+# Reversions for Interpreting
+
+YEAR_02_SUMMARY <- YEAR_02 %>% summarise(MEAN_DI = mean(MEAN_YEARLY_DI), SD_DI = sd(MEAN_YEARLY_DI), MEAN_SITES = mean(N_Sites), SD_SITES = sd(N_Sites))
+
+YEAR_02_SUMMARY
+
+YEAR_02_CENTERS <- as.data.frame(km_02$centers)
+
+YEAR_02_UNSCALED <- YEAR_02_CENTERS %>% mutate(DI_CENTERS = ((MEAN_YEARLY_DI * 0.7485996) + 0.4324639), SITES_CENTERS = ((N_Sites * 0.371634) + 6.869919)) 
+
+YEAR_02_UNSCALED <- cbind(YEAR_02_UNSCALED, CLUSTER_SIZE_02)
+
+YEAR_02_UNSCALED
+
+CLASSIFY_02 <- cbind(YEAR_02_CLASSIFY, cluster = km_02$cluster)
+
+head(CLASSIFY_02)
+
+UNSCALED_02_CENTERS <- YEAR_02_UNSCALED %>% dplyr::select(DI_CENTERS, SITES_CENTERS, MEAN_YEARLY_DI, N_Sites)
+
+```
+
+### 2004 K-Means
+
+```{r}
+# 2004 Visualization
+# Use K = 4
+K_04 <- fviz_nbclust(Scaled_04, FUNcluster = kmeans, method = "wss", k.max = 25)+ labs(title = "Optimal Number of Cluster 2004")
+
+km_04 <- kmeans(Scaled_04, centers = 4, nstart = 25)
+
+print(km_04)
+
+VIZ_04 <- fviz_cluster(km_04, Scaled_04, geom = "point", ellipse.type = "convex")+ labs(title = "2004")
+
+CLUSTER_SIZE_04 <- km_04$size
+
+CLUSTER_SIZE_04
+
+# Reversions for Interpreting
+
+YEAR_04_SUMMARY <- YEAR_04 %>% summarise(MEAN_DI = mean(MEAN_YEARLY_DI), SD_DI = sd(MEAN_YEARLY_DI), MEAN_SITES = mean(N_Sites), SD_SITES = sd(N_Sites))
+
+YEAR_04_SUMMARY
+
+YEAR_04_CENTERS <- as.data.frame(km_04$centers)
+
+YEAR_04_UNSCALED <- YEAR_04_CENTERS %>% mutate(DI_CENTERS = ((MEAN_YEARLY_DI * 0.6578313) + 0.3122856), SITES_CENTERS = ((N_Sites * 0.06375767) + 6.995935)) 
+
+YEAR_04_UNSCALED <- cbind(YEAR_04_UNSCALED, CLUSTER_SIZE_04)
+
+YEAR_04_UNSCALED
+
+CLASSIFY_04 <- cbind(YEAR_04_CLASSIFY, cluster = km_04$cluster)
+
+head(CLASSIFY_04)
+
+UNSCALED_04_CENTERS <- YEAR_04_UNSCALED %>% dplyr::select(DI_CENTERS, SITES_CENTERS, MEAN_YEARLY_DI, N_Sites)
+```
+
+### 2006 K-Means
+
+```{r}
+# 2006 Visualization
+# Use K = 4
+K_06 <- fviz_nbclust(Scaled_06, FUNcluster = kmeans, method = "wss", k.max = 25)+ labs(title = "Optimal Number of Cluster 2006")
+
+km_06 <- kmeans(Scaled_06, centers = 4, nstart = 25)
+
+print(km_06)
+
+VIZ_06 <- fviz_cluster(km_06, Scaled_06, geom = "point", ellipse.type = "convex")+ labs(title = "2006")
+
+CLUSTER_SIZE_06 <- km_06$size
+
+CLUSTER_SIZE_06
+
+# Reversions for Interpreting
+
+YEAR_06_SUMMARY <- YEAR_06 %>% summarise(MEAN_DI = mean(MEAN_YEARLY_DI), SD_DI = sd(MEAN_YEARLY_DI), MEAN_SITES = mean(N_Sites), SD_SITES = sd(N_Sites))
+
+YEAR_06_SUMMARY
+
+YEAR_06_CENTERS <- as.data.frame(km_06$centers)
+
+YEAR_06_UNSCALED <- YEAR_06_CENTERS %>% mutate(DI_CENTERS = ((MEAN_YEARLY_DI * 0.6610766) + 0.3242634), SITES_CENTERS = ((N_Sites * 0.06375767) + 7.995935)) 
+
+YEAR_06_UNSCALED <- cbind(YEAR_06_UNSCALED, CLUSTER_SIZE_06)
+
+YEAR_06_UNSCALED
+
+CLASSIFY_06 <- cbind(YEAR_06_CLASSIFY, cluster = km_06$cluster)
+
+head(CLASSIFY_06)
+
+UNSCALED_06_CENTERS <- YEAR_06_UNSCALED %>% dplyr::select(DI_CENTERS, SITES_CENTERS, MEAN_YEARLY_DI, N_Sites)
+
+```
+
+### 2008 K-Means
+
+```{r}
+# 2008 Visualization
+# Use K = 4
+K_08 <- fviz_nbclust(Scaled_08, FUNcluster = kmeans, method = "wss", k.max = 25)+ labs(title = "Optimal Number of Cluster 2008")
+
+km_08 <- kmeans(Scaled_08, centers = 4, nstart = 25)
+
+print(km_08)
+
+VIZ_08 <- fviz_cluster(km_08, Scaled_08, geom = "point", ellipse.type = "convex")+ labs(title = "2008")
+
+CLUSTER_SIZE_08 <- km_08$size
+
+CLUSTER_SIZE_08
+
+# Reversions for Interpreting
+
+YEAR_08_SUMMARY <- YEAR_08 %>% summarise(MEAN_DI = mean(MEAN_YEARLY_DI), SD_DI = sd(MEAN_YEARLY_DI), MEAN_SITES = mean(N_Sites), SD_SITES = sd(N_Sites))
+
+YEAR_08_SUMMARY
+
+YEAR_08_CENTERS <- as.data.frame(km_08$centers)
+
+YEAR_08_UNSCALED <- YEAR_08_CENTERS %>% mutate(DI_CENTERS = ((MEAN_YEARLY_DI * 0.7254077) + 0.3734237), SITES_CENTERS = ((N_Sites * 0.06375767) + 7.995935)) 
+
+YEAR_08_UNSCALED <- cbind(YEAR_08_UNSCALED, CLUSTER_SIZE_08)
+
+YEAR_08_UNSCALED
+
+CLASSIFY_08 <- cbind(YEAR_08_CLASSIFY, cluster = km_08$cluster)
+
+head(CLASSIFY_08)
+
+UNSCALED_08_CENTERS <- YEAR_08_UNSCALED %>% dplyr::select(DI_CENTERS, SITES_CENTERS, MEAN_YEARLY_DI, N_Sites)
+
+```
+
+### 2010 K-Means
+
+```{r}
+# 2010 Visualization
+# Use K = 4
+K_10 <- fviz_nbclust(Scaled_10, FUNcluster = kmeans, method = "wss", k.max = 25)+ labs(title = "Optimal Number of Cluster 2010")
+
+km_10 <- kmeans(Scaled_10, centers = 4, nstart = 25)
+
+print(km_10)
+
+VIZ_10 <- fviz_cluster(km_10, Scaled_10, geom = "point", ellipse.type = "convex")+ labs(title = "2010")
+
+CLUSTER_SIZE_10 <- km_10$size
+
+CLUSTER_SIZE_10
+
+# Reversions for Interpreting
+
+YEAR_10_SUMMARY <- YEAR_10 %>% summarise(MEAN_DI = mean(MEAN_YEARLY_DI), SD_DI = sd(MEAN_YEARLY_DI), MEAN_SITES = mean(N_Sites), SD_SITES = sd(N_Sites))
+
+YEAR_10_SUMMARY
+
+YEAR_10_CENTERS <- as.data.frame(km_10$centers)
+
+YEAR_10_UNSCALED <- YEAR_10_CENTERS %>% mutate(DI_CENTERS = ((MEAN_YEARLY_DI * 0.7387034) + 0.5224045), SITES_CENTERS = ((N_Sites * 0.1895302) + 8.971545)) 
+
+YEAR_10_UNSCALED <- cbind(YEAR_10_UNSCALED, CLUSTER_SIZE_10)
+
+YEAR_10_UNSCALED
+
+CLASSIFY_10 <- cbind(YEAR_10_CLASSIFY, cluster = km_10$cluster)
+
+head(CLASSIFY_10)
+
+UNSCALED_10_CENTERS <- YEAR_10_UNSCALED %>% dplyr::select(DI_CENTERS, SITES_CENTERS, MEAN_YEARLY_DI, N_Sites)
+
+```
+
+### 2012 K-Means
+
+```{r}
+# 2012 Visualization
+# Use K = 4
+K_12 <- fviz_nbclust(Scaled_12, FUNcluster = kmeans, method = "wss", k.max = 25)+ labs(title = "Optimal Number of Cluster 2012")
+
+km_12 <- kmeans(Scaled_12, centers = 4, nstart = 25)
+
+print(km_12)
+
+VIZ_12 <- fviz_cluster(km_12, Scaled_12, geom = "point", ellipse.type = "convex")+ labs(title = "2012")
+
+CLUSTER_SIZE_12 <- km_12$size
+
+CLUSTER_SIZE_12
+
+# Reversions for Interpreting
+
+YEAR_12_SUMMARY <- YEAR_12 %>% summarise(MEAN_DI = mean(MEAN_YEARLY_DI), SD_DI = sd(MEAN_YEARLY_DI), MEAN_SITES = mean(N_Sites), SD_SITES = sd(N_Sites))
+
+YEAR_12_SUMMARY
+
+YEAR_12_CENTERS <- as.data.frame(km_12$centers)
+
+YEAR_12_UNSCALED <- YEAR_12_CENTERS %>% mutate(DI_CENTERS = ((MEAN_YEARLY_DI * 0.8130247) + 0.5499906), SITES_CENTERS = ((N_Sites * 0.08998276) + 9.99187)) 
+
+YEAR_12_UNSCALED <- cbind(YEAR_12_UNSCALED, CLUSTER_SIZE_12)
+
+YEAR_12_UNSCALED
+
+CLASSIFY_12 <- cbind(YEAR_12_CLASSIFY, cluster = km_12$cluster)
+
+head(CLASSIFY_12)
+
+UNSCALED_12_CENTERS <- YEAR_12_UNSCALED %>% dplyr::select(DI_CENTERS, SITES_CENTERS, MEAN_YEARLY_DI, N_Sites)
+
+```
+
+### 2014 K-Means
+
+```{r}
+# 2014 Visualization
+# Use K = 4
+K_14 <- fviz_nbclust(Scaled_14, FUNcluster = kmeans, method = "wss", k.max = 25)+ labs(title = "Optimal Number of Cluster 2014")
+
+km_14 <- kmeans(Scaled_14, centers = 4, nstart = 25)
+
+print(km_14)
+
+VIZ_14 <- fviz_cluster(km_14, Scaled_14, geom = "point", ellipse.type = "convex")+ labs(title = "2014")
+
+CLUSTER_SIZE_14 <- km_14$size
+
+CLUSTER_SIZE_14
+
+# Reversions for Interpreting
+
+YEAR_14_SUMMARY <- YEAR_14 %>% summarise(MEAN_DI = mean(MEAN_YEARLY_DI), SD_DI = sd(MEAN_YEARLY_DI), MEAN_SITES = mean(N_Sites), SD_SITES = sd(N_Sites))
+
+YEAR_14_SUMMARY
+
+YEAR_14_CENTERS <- as.data.frame(km_14$centers)
+
+YEAR_14_UNSCALED <- YEAR_14_CENTERS %>% mutate(DI_CENTERS = ((MEAN_YEARLY_DI * 0.7944252) + 0.507344), SITES_CENTERS = ((N_Sites * 0.4755861) + 9.95122)) 
+
+YEAR_14_UNSCALED <- cbind(YEAR_14_UNSCALED, CLUSTER_SIZE_14)
+
+YEAR_14_UNSCALED
+
+CLASSIFY_14 <- cbind(YEAR_14_CLASSIFY, cluster = km_14$cluster)
+
+head(CLASSIFY_14)
+
+UNSCALED_14_CENTERS <- YEAR_14_UNSCALED %>% dplyr::select(DI_CENTERS, SITES_CENTERS, MEAN_YEARLY_DI, N_Sites)
+
+```
+
+### 2016 K-Means
+
+```{r}
+# 2016 Visualization
+# Use K = 4
+K_16 <- fviz_nbclust(Scaled_16, FUNcluster = kmeans, method = "wss", k.max = 25)+ labs(title = "Optimal Number of Cluster 2016")
+
+km_16 <- kmeans(Scaled_16, centers = 4, nstart = 25)
+
+print(km_16)
+
+VIZ_16 <- fviz_cluster(km_16, Scaled_16, geom = "point", ellipse.type = "convex")+ labs(title = "2016")
+
+CLUSTER_SIZE_16 <- km_16$size
+
+CLUSTER_SIZE_16
+
+# Reversions for Interpreting
+
+YEAR_16_SUMMARY <- YEAR_16 %>% summarise(MEAN_DI = mean(MEAN_YEARLY_DI), SD_DI = sd(MEAN_YEARLY_DI), MEAN_SITES = mean(N_Sites), SD_SITES = sd(N_Sites))
+
+YEAR_16_SUMMARY
+
+YEAR_16_CENTERS <- as.data.frame(km_16$centers)
+
+YEAR_16_UNSCALED <- YEAR_16_CENTERS %>% mutate(DI_CENTERS = ((MEAN_YEARLY_DI * 0.4912736) + 0.1931173), SITES_CENTERS = ((N_Sites * 0.1099799) + 9.987805)) 
+
+YEAR_16_UNSCALED <- cbind(YEAR_16_UNSCALED, CLUSTER_SIZE_16)
+
+YEAR_16_UNSCALED
+
+CLASSIFY_16 <- cbind(YEAR_16_CLASSIFY, cluster = km_16$cluster)
+
+head(CLASSIFY_16)
+
+UNSCALED_16_CENTERS <- YEAR_16_UNSCALED %>% dplyr::select(DI_CENTERS, SITES_CENTERS, MEAN_YEARLY_DI, N_Sites)
+
+```
+
+### 2018 K-Means
+
+```{r}
+# 2018 Visualization
+# Use K = 4
+K_18 <- fviz_nbclust(Scaled_18, FUNcluster = kmeans, method = "wss", k.max = 25)+ labs(title = "Optimal Number of Cluster 2018")
+
+km_18 <- kmeans(Scaled_18, centers = 4, nstart = 25)
+
+print(km_18)
+
+km_18$size
+
+VIZ_18 <- fviz_cluster(km_18, Scaled_18, geom = "point", ellipse.type = "convex")+ labs(title = "2018")
+
+CLUSTER_SIZE_18 <- km_18$size
+
+CLUSTER_SIZE_18
+
+
+
+# Reversions for Interpreting
+
+YEAR_18_SUMMARY <- YEAR_18 %>% summarise(MEAN_DI = mean(MEAN_YEARLY_DI), SD_DI = sd(MEAN_YEARLY_DI), MEAN_SITES = mean(N_Sites), SD_SITES = sd(N_Sites))
+
+YEAR_18_SUMMARY
+
+YEAR_18_CENTERS <- as.data.frame(km_18$centers)
+
+YEAR_18_UNSCALED <- YEAR_18_CENTERS %>% mutate(DI_CENTERS = ((MEAN_YEARLY_DI * 0.8379484) + 0.832788), SITES_CENTERS = ((N_Sites * 0.4950058) + 9.910569)) 
+
+YEAR_18_UNSCALED <- cbind(YEAR_18_UNSCALED, CLUSTER_SIZE_18)
+
+YEAR_18_UNSCALED
+
+CLASSIFY_18 <- cbind(YEAR_18_CLASSIFY, cluster = km_18$cluster)
+
+head(CLASSIFY_18)
+
+UNSCALED_18_CENTERS <- YEAR_18_UNSCALED %>% dplyr::select(DI_CENTERS, SITES_CENTERS, MEAN_YEARLY_DI, N_Sites)
+
+```
+
+### Visualize Optimal K Plots
+
+```{r}
+grid.arrange(K_98, K_00, K_02, K_04, ncol = 2)
+
+grid.arrange(K_06, K_08, K_10, K_12, ncol = 2)
+
+grid.arrange(K_14, K_16, K_18, ncol = 2)
+
+
+
+```
+
+### Visualize Yearly Clusters
+
+```{r}
+grid.arrange(VIZ_98, VIZ_00, VIZ_02, VIZ_04, ncol = 2)
+
+grid.arrange(VIZ_06, VIZ_08, VIZ_10, VIZ_12, ncol = 2)
+
+grid.arrange(VIZ_14, VIZ_16, VIZ_18, ncol = 2)
+
+```
+
+### Unscaled Cluster Centers
+
+```{r}
+UNSCALED_98_CENTERS
+UNSCALED_00_CENTERS
+UNSCALED_02_CENTERS
+UNSCALED_04_CENTERS
+UNSCALED_06_CENTERS
+UNSCALED_08_CENTERS
+UNSCALED_10_CENTERS
+UNSCALED_12_CENTERS
+UNSCALED_14_CENTERS
+UNSCALED_16_CENTERS
+UNSCALED_18_CENTERS
+
+
+### Measure of Centers Over Time
+
+Centers_98 <- UNSCALED_98_CENTERS["DI_CENTERS"] %>% arrange(desc(DI_CENTERS))
+Centers_00 <- UNSCALED_00_CENTERS["DI_CENTERS"] %>% arrange(desc(DI_CENTERS))
+Centers_02 <- UNSCALED_02_CENTERS["DI_CENTERS"] %>% arrange(desc(DI_CENTERS))
+Centers_04 <- UNSCALED_04_CENTERS["DI_CENTERS"] %>% arrange(desc(DI_CENTERS))
+Centers_06 <- UNSCALED_06_CENTERS["DI_CENTERS"] %>% arrange(desc(DI_CENTERS))
+Centers_08 <- UNSCALED_08_CENTERS["DI_CENTERS"] %>% arrange(desc(DI_CENTERS))
+Centers_10 <- UNSCALED_10_CENTERS["DI_CENTERS"] %>% arrange(desc(DI_CENTERS))
+Centers_12 <- UNSCALED_12_CENTERS["DI_CENTERS"] %>% arrange(desc(DI_CENTERS))
+Centers_14 <- UNSCALED_14_CENTERS["DI_CENTERS"] %>% arrange(desc(DI_CENTERS))
+Centers_16 <- UNSCALED_16_CENTERS["DI_CENTERS"] %>% arrange(desc(DI_CENTERS))
+Centers_18 <- UNSCALED_18_CENTERS["DI_CENTERS"] %>% arrange(desc(DI_CENTERS))
+
+TIME_CENTERS_EARLY <- as.data.frame(cbind(Centers_98, Centers_00, Centers_02, Centers_04, Centers_06, Centers_08))
+
+TIME_CENTERS_LATE <- as.data.frame(cbind(Centers_10, Centers_12, Centers_14, Centers_16, Centers_18))
+
+
+kable(TIME_CENTERS_EARLY, booktabs = T, 
+      caption = "K-Means Density Index Cluster Centers From 1998 to 2008 for Grand Cayman Data",
+      col.names = c("1998 Centers", "2000 Centers", "2002 Centers", "2004 Centers", "2006 Centers", "2008 Centers")) %>%
+  kable_styling(full_width = T)
+
+kable(TIME_CENTERS_LATE, booktabs = T, 
+      caption = "K-Means Density Index Cluster Centers From 2010 to 2018 for Grand Cayman Data",
+      col.names = c("2010 Centers", "2012 Centers", "2014 Centers", "2016 Centers", "2018 Centers")) %>%
+  kable_styling(full_width = T)
+```
+
+### Specific Species Investigations
+
+Here I will be investigating the clusters overall in terms of their centers, but also as they relate to specific species of interest in other studies. 
+
+The "Lionfish" has been shown to negatively impact reef abundance, so how has their density changed over time? The same has been shown of the Mahogony Snapper (Lutjanidae), so how has their density changed over time? (They greatly decrease grunt Haemulidae populations)
+
+Low sighting frequencies of groupers (Serranidae), use "Yellowmouth Grouper", "Nassau Grouper", and "Black Grouper", and parrotfish (Scaridae ), use "Stoplight Parrotfish", "Redband Parrotfish", and "Rainbow Parrotfish", reflective of higher harvest pressure
+
+Finally, algael abundance has been steadily increasing over the past 30 years on Grand Cayman, and studies have shown algal levels decrease at sites with high parrotfish density, but they actually increase in sites with high surgeonfish density (both are major herbivores). So, how have these fish changed in abundance over time with the increasing food supply? Is one decreasing and the other increasing?
+
+Surgeonfish checked using: "Ocean Surgeonfish"
+
+
+```{r}
+### Lionfish
+
+Lionfish_98 <- CLASSIFY_98 %>% filter(SPECIES_NAME == "Lionfish") 
+Lionfish_08 <- CLASSIFY_08 %>% filter(SPECIES_NAME == "Lionfish")
+Lionfish_14 <- CLASSIFY_14 %>% filter(SPECIES_NAME == "Lionfish")
+Lionfish_18 <- CLASSIFY_18 %>% filter(SPECIES_NAME == "Lionfish")
+
+Lionfish_Time <- as.data.frame(rbind(Lionfish_98, Lionfish_08, Lionfish_14, Lionfish_18))
+
+Year<- c(1998, 2008, 2014, 2018)
+
+Lionfish_Time <- cbind(Lionfish_Time, Year)
+
+LF_Cluster_Center <- c(0.1087986, 0.04465814, 0.08624584, 0.9258102)
+
+Lionfish_Time <- as.data.frame(cbind(Lionfish_Time, LF_Cluster_Center)) %>% dplyr::select(SPECIES_NAME, Year, cluster, LF_Cluster_Center)
+
+Lionfish_Time
+
+
+# Snappers
+
+Mahogony_98 <- CLASSIFY_98 %>% filter(SPECIES_NAME == "Mahogany Snapper") 
+Mahogony_08 <- CLASSIFY_08 %>% filter(SPECIES_NAME == "Mahogany Snapper")
+Mahogony_14 <- CLASSIFY_14 %>% filter(SPECIES_NAME == "Mahogany Snapper")
+Mahogony_18 <- CLASSIFY_18 %>% filter(SPECIES_NAME == "Mahogany Snapper")
+
+Snapper_Time <- as.data.frame(rbind(Mahogony_98, Mahogony_08, Mahogony_14, Mahogony_18))
+
+Snapper_Time <- cbind(Snapper_Time, Year)
+
+MS_Cluster_Center <- c(0.1087986, 2.28993105, 0.08624584, 0.92581020)
+
+Snapper_Time <- as.data.frame(cbind(Snapper_Time, MS_Cluster_Center)) %>% dplyr::select(SPECIES_NAME, Year, cluster, MS_Cluster_Center)
+
+Snapper_Time
+
+# groupers (Serranidae)
+
+Groupers_98 <- CLASSIFY_98 %>% filter(SPECIES_NAME ==  "Nassau Grouper")
+Groupers_08 <- CLASSIFY_08 %>% filter(SPECIES_NAME ==  "Nassau Grouper")
+Groupers_14 <- CLASSIFY_14 %>% filter(SPECIES_NAME ==  "Nassau Grouper")
+Groupers_18 <- CLASSIFY_18 %>% filter(SPECIES_NAME ==  "Nassau Grouper")
+
+Groupers_Time <- as.data.frame(rbind(Groupers_98, Groupers_08, Groupers_14, Groupers_18))
+
+Groupers_Time <- cbind(Groupers_Time, Year) %>% arrange(desc(SPECIES_NAME))
+
+NG_Cluster_Center <- c(1.5708361, 0.04465814, 0.08624584, 0.9258102)
+
+Groupers_Time <- as.data.frame(cbind(Groupers_Time, NG_Cluster_Center)) %>% dplyr::select(SPECIES_NAME, Year, cluster, NG_Cluster_Center)
+
+Groupers_Time
+
+# Parrotfish (Scaridae)
+
+
+Parrots_98 <- CLASSIFY_98 %>% filter(SPECIES_NAME =="Rainbow Parrotfish")
+Parrots_08 <- CLASSIFY_08 %>% filter(SPECIES_NAME =="Rainbow Parrotfish")
+Parrots_14 <- CLASSIFY_14 %>% filter(SPECIES_NAME =="Rainbow Parrotfish")
+Parrots_18 <- CLASSIFY_18 %>% filter(SPECIES_NAME =="Rainbow Parrotfish")
+
+Parrots_Time <- as.data.frame(rbind(Parrots_98, Parrots_08, Parrots_14, Parrots_18))
+
+Parrots_Time <- cbind(Parrots_Time, Year) %>% arrange(desc(SPECIES_NAME))
+
+RP_Cluster_Center <- c(1.5708361, 1.05204472, 2.201156, 0.9258102)
+
+Parrots_Time <- as.data.frame(cbind(Parrots_Time, RP_Cluster_Center)) %>% dplyr::select(SPECIES_NAME, Year, cluster, RP_Cluster_Center)
+
+Parrots_Time
+
+### SurgeonFish
+
+Surgeon_98 <- CLASSIFY_98 %>% filter(SPECIES_NAME == "Ocean Surgeonfish") 
+Surgeon_08 <- CLASSIFY_08 %>% filter(SPECIES_NAME == "Ocean Surgeonfish")
+Surgeon_14 <- CLASSIFY_14 %>% filter(SPECIES_NAME == "Ocean Surgeonfish")
+Surgeon_18 <- CLASSIFY_18 %>% filter(SPECIES_NAME == "Ocean Surgeonfish")
+
+Surgeon_Time <- as.data.frame(rbind(Surgeon_98, Surgeon_08, Surgeon_14, Surgeon_18))
+
+Surgeon_Time <- cbind(Surgeon_Time, Year)
+
+OS_Cluster_Center <- c(1.5708361, 0.04465814, 2.201156, 2.1440958)
+
+Surgeon_Time <- as.data.frame(cbind(Surgeon_Time, OS_Cluster_Center)) %>% dplyr::select(SPECIES_NAME, Year, cluster, OS_Cluster_Center)
+
+Surgeon_Time
+```
+### KABLES FOR THESE SPECIES
+
+```{r}
+kable(Lionfish_Time, booktabs = T, 
+      caption = "Density Index K-Means Cluster Movements of the Lionfish",
+      col.names = c("Species", "Year", "Cluster", "Cluster Center")) %>%
+  kable_styling(full_width = T)
+
+kable(Snapper_Time, booktabs = T, 
+      caption = "Density Index K-Means Cluster Movements of the Mahogony Snapper",
+      col.names = c("Species", "Year", "Cluster", "Cluster Center")) %>%
+  kable_styling(full_width = T)
+
+kable(Groupers_Time, booktabs = T, 
+      caption = "Density Index K-Means Cluster Movements of the Nassau Grouper",
+      col.names = c("Species", "Year", "Cluster", "Cluster Center")) %>%
+  kable_styling(full_width = T)
+
+kable(Parrots_Time, booktabs = T, 
+      caption = "Density Index K-Means Cluster Movements of the Rainbow Parrotfish",
+      col.names = c("Species", "Year", "Cluster", "Cluster Center")) %>%
+  kable_styling(full_width = T)
+
+kable(Surgeon_Time, booktabs = T, 
+      caption = "Density Index K-Means Cluster Movements of the Ocean Surgeonfish",
+      col.names = c("Species", "Year", "Cluster", "Cluster Center")) %>%
+  kable_styling(full_width = T)
+
+```
+
+
+
+
