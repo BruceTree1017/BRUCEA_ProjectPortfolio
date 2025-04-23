@@ -1,0 +1,528 @@
+---
+title: 'CMSC/LING/STAT 208: ML - FINAL PROJECT'
+author: "Adam Bruce"
+output: html_document
+---
+
+```{r, include=FALSE}
+knitr::opts_chunk$set( message=FALSE, warning=FALSE)
+library(tidyverse)
+library(knitr)
+library(dplyr)
+library(corrplot)
+library(skimr)
+library(grid)
+library(gridExtra)
+library(tidyselect)
+library(selectr)
+library(ISLR)
+library(forcats)
+library(corrplot)
+library(MASS) 
+library(ggplot2)
+library(kableExtra)
+library(caret)
+library(grid)
+library(openintro)
+library(tidyverse)
+library(ISLR)
+library(caret)
+library(recipes)
+library(glmnet)
+library(gam)
+library(splines)
+library(earth)
+library(rpart)
+library(rpart.plot)
+library(ipred)
+library(e1071)
+library(ranger)
+library(pls)
+
+
+
+set.seed(04302022)
+```
+
+## Abstract
+
+
+Since its introduction in 1993, the video game series FIFA has been one of the most popular games worldwide. Modern versions of the game are sci-fi-like compared to the pixelated early renditions that brought the sports world online. In this report, I analyze data from the 2019 version of the game released on September 13th, 2019. Using cross validation techniques, I build several statistical regression models to the dataset in an attempt to make the most accurate predictions for a players `Overall`, a marker of their rating within the game. The RMSE/OOBE metrics are used as the premises for comparison between models. Ultimately, I observe that the NON-Parametric Random Forest Technique produces an extremely accurate prediction model, which also has low variance and bias. This result shows just how powerful the statistical technique behind Random Forests can be for "real-world" data.
+
+
+
+\newpage
+
+## Introduction
+
+Using a public data set with 89 possible explanatory variables and 18207 observations for each variable, provided on Kaggle at  [FIFA_DATA](https://www.kaggle.com/datasets/karangadiya/fifa19), this project aims to develop a model for best predicting overall ratings of players (Encoded Overall in dataset) in the popular soccer video game known as FIFA. The data comes from the 2019 version of the game. The foundation for developing the best prediction model will be cross validation techniques. In the end, the model I develop should be able to predict player ratings rather well, but it will not necessarily be easily interpretable as my focus for this exploration is to model for prediction only. Ultimately, I will be determining the best model on how it performs on unseen test data.  Below, the report will begin with some exploratory analysis of the data and then some data pre-processing techniques. 
+
+
+## Exploratory Analysis 
+
+```{r}
+FIFA_19 <- read_csv("~/Desktop/CMSC 208 Machine Learning/COURSE PROJECT/FIFA_19.csv")
+
+head(FIFA_19)
+
+```
+Initially, using the head function, we can see the dataset is comprised of 44 numeric variables and 45 categorical variables. Several of the variables encode URL's for images, like the flag associated with the country of origin for the player. Other variables, like release clause, are encoded as characters but should be numeric. Additionally, several variables have NA values and there are two variables, X1 and ID, that are solely identification variables. We will ultimately have to clean this dataset with tidying and data pre-processing techniques, but first we can visually explore some variables of interest.
+
+
+```{r, fig.cap="Distribution of Player Ratings"}
+ggplot(data=FIFA_19, aes(x=Overall)) + geom_histogram(fill="aquamarine4", color="cadetblue1") +  ylab("frequency") + xlab("Overall") +ggtitle("Distribution of Player Ratings in FIFA 19")
+
+Overall_Ratings <- summary(FIFA_19$Overall)
+
+Overall_Ratings
+
+Best_Players <- FIFA_19 %>% filter(Overall == 94.00)
+
+kable(Best_Players)
+```
+From the summary table, we see that the distribution of Overall is rather normally distributed. The mean player rating sits at 66.24, and the max is 94.00 while the min is 46.00. Perhaps unsurprisingly, the two best players in this edition of the game are Lionel Messi and Cristiano Ronaldo. 
+
+
+
+```{r, fig.cap="Overall Distribution by Player Position"}
+ggplot(data=FIFA_19, aes(y=Overall, x=Position)) + geom_boxplot(aes(color = Position))+ ggtitle("Overall Player Ratings By Field Position")
+
+```
+Overall, some initial investigation into positional ratings shows that the median rating tends to be highest for players in attacking minded positions. Additionally, there seems to be a few outliers for each positional group, and these outliers are predominantly on the higher end of the overall rating. This makes sense for real world soccer, as there are usually a handful of players in each positional group which are considered to be "World Class" and likely represent the highly rated outliers. Finally, it is interesting to note that LAM and RAM (Left Attacking Midfield/Right Attacking Midfield) have a relatively low variance in there ratings. This is likely representative of the fact that very few teams in modern soccer employ a formation involving RAM and LAM, as preference is placed on CAM (Center Attacking Midfield) most of the time. 
+
+```{r}
+Table.Nationality.Overall <- FIFA_19 %>% group_by(Nationality) %>% summarize(Mean_Overall = mean(Overall), 
+                                             SD_Overall = sd(Overall), 
+                                             N = n()) %>% filter(N >= 300) %>% arrange(desc(Mean_Overall))
+kable(Table.Nationality.Overall, caption="Overall Player Ratings By Nationality")
+
+```
+For this summary, shown as a kable, we can see the Average Overall player ratings for countries with atleast 300 players in the video game. The table indicates that most of these major countries have average overalls close to the overall mean player rating of 66.24. Additionally, we can see that Portugal has the highest player ratings overall at 71.34, but that can be deceiving as they have a sample size of only 322 compared with Brazil, who is second by very little, at 71.25 on average and a sample size of 827. So, it is more likely that Brazil, or even Spain, have the best overall player ratings on average. At the bottom of this list, we see China, which has an average overall of 59.91 for there 392 represented players. This is relatively unsurprising as China is a large nation, meaning they inevitably have a decent sample size of players, but they do not have a major global soccer league, like England's Premier League or Spains La Liga, so they have relatively low Overalls on average. 
+
+```{r}
+FIFA_19$Value <- gsub("€","", as.character(FIFA_19$Value))
+
+FIFA_19$Value <- gsub("M","", as.character(FIFA_19$Value))
+
+FIFA_19$Value <- as.numeric(FIFA_19$Value) 
+
+
+Overall_Value <- ggplot(data=FIFA_19, aes(x=Value, y=Overall)) + geom_point(color="coral") + stat_smooth(method="loess", color="firebrick4", se = F) + labs(title = "Overall by Player Value (Millions of Euro's)")
+
+
+
+Overall_Jersey <- ggplot(data=FIFA_19, aes(x=`Jersey Number`, y=Overall)) + geom_point(color="dodgerblue") + stat_smooth(method="loess", color="magenta1", se = F)+ labs(title = "Overall by Player Jersey Number")
+
+grid.arrange(Overall_Value, Overall_Jersey,ncol=2)
+
+```
+
+
+After some quick manipulation of the Value variable, we can see that as a players value increases (Note this is in Euros), there Overall rating tends to increase. However, the trend of increase is not exactly linear, as the rate of increase seems to follow an upside down parabola, which indicates some polynomial terms may be helpful in our analysis later on. Also, it is worth noting that most players make a wage between 0 and 30 million Euros.
+
+Additionally, it is interesting to look at the scatter plot of overalls by Jersey Number. The variable could be thought of as categorical because it is non-continuous, but when we look at it on a numeric scale we see that lower jersey numbers generally have higher ratings. It may seem somewhat surprising that any trend exists between these two variables at all, but in soccer lower Jersey Numbers are in most leagues reserved for Attacking players. In general, attacking players tend to be rated the highest overall, so this trend is not so surprising after all. However, the increase after the middle values is quite surprising, but perhaps the relative scarcity of observations at these high values partially explains this trend. 
+
+
+```{r}
+
+Table.Club.Overall <- FIFA_19 %>% group_by(Club) %>% summarize(Mean_Overall_Club = mean(Overall), 
+                                             SD_Overall_Club = sd(Overall), 
+                                             N_Club = n()) %>% filter(N_Club >= 20 & Mean_Overall_Club >= 75.00) %>% arrange(desc(Mean_Overall_Club))
+
+kable(Table.Club.Overall, caption="Player Overalls by Team (Club)")
+```
+This summary table is very intriguing. First, it indicates the clubs throughout the world with a roster of atleast 20 and an average overall at least 75.00. These are clubs which woukld be considered Elite on the world stage and likely compete for major trophies in their respective leagues/country. Interestingly, the top three teams for player overalls in this game were Juventus, Napoli, and Inter who are all part of the Italian Serie A league. In 2019, Juventus was the league winner, Napoli was runnerup, and inter tiedfor third with Atalanta. However, only Juventus made it to the knockout round of Europe's most pristine tournament, the Champions League, but they were out in the quarter finals. So, it could be argued that these teams thrived in their countries leagues, but severely underperformed on the European stage in 2019. One final observation is that Liverpool, the last team on this list with an average overall of 76.00 for their players, actually was the winner of the European Champions League title this year, so they likely overperformed on the international stage. 
+
+```{r}
+FIFA_19 <- FIFA_19 %>% dplyr::filter(`Preferred Foot` %in% c("Right", "Left"))
+
+mean_Pref_Foot <- FIFA_19 %>%  dplyr::select(Overall, `Preferred Foot`) %>%  group_by(`Preferred Foot`) %>% summarise(Mean_Overall_Foot = mean(Overall), N_Foot = n())
+kable(mean_Pref_Foot, caption = "Player Overalls By Preferred Foot")
+
+
+Age.Overall_Foot <- ggplot(data = FIFA_19, aes(x = Age, y = Overall))+
+  geom_point(aes( color = `Preferred Foot`))+
+  geom_smooth(method = "loess", color = c("goldenrod"), se = F)+
+  facet_wrap(~`Preferred Foot`)+
+  labs(title = "Player Overall by Age for Left and Right Foot Dominant Players")
+Age.Overall_Foot
+```
+In these final summary analyses, we can see that the Preferred foot of a player does little to impact their expected overall on average. This is true across all ages as can be seen in the second ggplot. Additionally, it seems that as players age, there overalls initially increase steadily until about age 30, where they start to decrease steadily as they hit their 40's. Of course, there are very few players who are actively playing past the age of 40, so we cannot be certain about trends past this point.
+
+
+## Cleaning/Feature Engineering/Data Pre-Processing
+
+
+### Data Cleaning:
+
+```{r}
+FIFA_19 <- FIFA_19[-c(1,2,5,7,11,20,21,24,25,29:54)] 
+
+FIFA_19 <- FIFA_19[-c(1,9,17)]
+
+head(FIFA_19)
+
+names(FIFA_19)[8:11] <- c("Preferred_Foot", "International_Reputation", "Weak_Foot", "Skill_Moves")
+
+names(FIFA_19)[14] <- "Jersey_Number"
+
+names(FIFA_19)[51] <- "Release_Clause"
+```
+To make the data easier to work with for cross validation and modeling techniques, I began by subsetting the original FIFA_19 dataset. By removing rows that had unnecessary information, I was able to isolate variables that may actually be of interest. I chose to get rid of `ID`, `Name`, and `X1` because they solely served as identifiers for each player. Next, I removed `Photo`, `Flag`, and `Club Logo` because these variables contained URL links to images that could not be used in this analysis. Moving on, I removed `Body Type`, `Real Face`, `Joined`, `Special`, and `Loaned From`. `Body Type` and `Real Face` served only as markers to identify what the player looked like virtually in the game (For instance did they have their real face scanned and pixelated onto their virtual player).
+
+`Joined` represented a date variable that was referencing the day the player joined their current club, but this variable is not important for our analysis. `Loaned From` was an indicator variable for whether or not the player was out on loan, but a vast majority of values in this column were NA as most players are not going to be loaned out. So, deleting this column made it possible to get rid of na containing rows without removing almost the entire dataset. `Special` was a variable that was not defined in the data registry page, so removing it was necessary as it is not clear to me what it means.I also removed the individual columns representing player Overall in each possible position (For example, CAM,RWB,LB, ST, GK, CM). This was done because we are not interested in analyzing a player outside of their true position when making our predictions. Additionally, their true positions were already included as a column in the dataset. 
+
+Next, I got rid of the column `Contract Valid Until`, because it contained specific dates for some contracts and only years for others which makes it hard to work with. Finally, I renamed the columns that contained spaces so that there where no spaces in the variable name (EX: `Jersey Number` to `Jersey_Number`)
+
+
+### Feature Engineering: 
+
+```{r}
+FIFA_19 <- FIFA_19 %>% separate(col = "Work Rate", into = c("Offensive_WR", "Defensive_WR"), sep = "/") 
+
+FIFA_19$Wage <- gsub("€","", as.character(FIFA_19$Wage))
+
+FIFA_19$Wage <- gsub("K","", as.character(FIFA_19$Wage))
+
+FIFA_19$Weight <- gsub("lbs","", as.character(FIFA_19$Weight))
+
+FIFA_19$`Release_Clause` <- gsub("€","", as.character(FIFA_19$`Release_Clause`))
+
+FIFA_19$`Release_Clause` <- gsub("M","", as.character(FIFA_19$`Release_Clause`))
+
+FIFA_19$Wage <- as.numeric(FIFA_19$Wage)
+
+FIFA_19$Weight<- as.numeric(FIFA_19$Weight)
+
+FIFA_19$`Release_Clause` <- as.numeric(FIFA_19$`Release_Clause`)
+
+FIFA_19 <- FIFA_19 %>% mutate(Value = (Value * 1.05), Wage = (Wage * 1.05), `Release_Clause` = (`Release_Clause` * 1.05), Attack_Attributes = ((Crossing + Finishing + Volleys + FKAccuracy + ShotPower + LongShots + Penalties)/7), Defensive_Attributes = ((Interceptions + Marking + StandingTackle + SlidingTackle)/4), GK_Attributes = ((GKDiving + GKHandling + GKKicking + GKPositioning + GKReflexes)/5), Technical_Skills = ((ShortPassing + HeadingAccuracy + Dribbling + Curve + BallControl + Acceleration + LongPassing + Reactions + Agility + SprintSpeed + Balance + Jumping + Stamina + Strength + Aggression + Positioning + Vision + Composure)/18)) %>% mutate_if(is.character, as.factor) 
+
+FIFA_19 <- FIFA_19[-c(5,18:51)]
+
+
+FIFA_19 <- FIFA_19 %>% mutate(Nationality = if_else(Nationality %in% c("Portugal", "Spain", "Belgium", "Croatia", "Slovenia", "Poland", "Germany", "France", "England", "Italy", "Denmark", "Wales", "Slovakia", "Albania", "Andorra", "Austria", "Belarus", "Bosnia Herzegovina", "Bulgaria", "Czech Republic", "Estonia", "Finland", "Georgia", "Greece", "", "Hungary", "Iceland", "Kosovo", "Latvia", "Liechtenstein", "Lithuania", "Luxembourg", "Malta", "Moldova", "Netherlands", "New Caledonia", "Northern Ireland", "Norway", "Republic of Ireland", "Romania", "Scotland", "Serbia", "Sweden", "Switzerland", "Turkey", "Ukraine"), "European", "Rest_of_World"))
+
+FIFA_19$Nationality <- as.factor(FIFA_19$Nationality)
+
+```
+To make the dataset easier to work with, I engineered several of the variables. First, `Work Rate` was coded as a single variable with two values corresponding to Offensive and Defensive Work Rate. I used the separate function to make this into two unique variables. Next, `Wage`, `Height`, and `Release_Clause` were all coded as categorical variables, and I used `gsub` to eliminate their excess symbols (ex: lbs, €). With the symbols gone, I simply made them numeric by using the `as.numeric` function. To make the data easier to understand from an American financial perspective, I converted the monetary amounts in Euros for Wage`, `Value`, and `Release_Clause` to US Dollars by multiplying by 1.05 (The going value of 1 Euro in dollars as of 05/11/2022).
+
+Towards the end of the dataset, there were an extensive amount of columns depicting player attributes (columns 18 to 51). I classified each of these categories as either `Attack_Attributes`, `Defensive_Attributes`, `GK_Attributes` (Goalies), and `Technical_Skills`. Using the `mutate` function, I took the mean of each of these four categories to condense the original 32 into these four categories. Next, I turned all categorical variables into Factors for cross validation. Additionally, I got rid of the 32 columns for the player attributes variables since I used them in the creation of the four summary variables. 
+
+Next, I got rid of the `Club` variable because there were over 600 unique clubs. After label encoding below and waiting over 24 hours for a smoothing splines model to run, I realized that breaking up this variables caused too many issues for cross validation as it added over 600 new columns with dummy variables. So, I got rid of it to save time and to stop my machine from crashing. Finally, there were 164 unique Nationalities, so I mutated the variaable using the `if_else` function to classify each country as `European` or `Rest_of_World`. This way `step_dummy` will only make two new columns instead of 164 to save time. A final look of the dataset before pre-processing can be seen here using the `head` function.
+
+```{r}
+head(FIFA_19)
+```
+
+Data Pre-Processing
+
+```{r}
+# RELEVEL POTENTIAL ORDINAL VARIABLES
+
+#Offensive WR
+
+FIFA_19 %>% count(Offensive_WR)
+
+levels(FIFA_19$Offensive_WR)
+
+# Re-Level the order
+
+FIFA_19$Offensive_WR <- factor(FIFA_19$Offensive_WR, levels=c('High', 'Medium', 'Low'))
+
+levels(FIFA_19$Offensive_WR)
+
+
+# Get rid of Defensive_WR 
+
+FIFA_19 <- FIFA_19 %>% dplyr::select(-Defensive_WR)
+
+# Height
+
+FIFA_19 %>% count(Height)
+
+levels(FIFA_19$Height)
+
+# Re-Level the order
+
+FIFA_19$Height <- factor(FIFA_19$Height, levels=c("6'9", "6'8", "6'7", "6'6", "6'5", "6'4", "6'3", "6'2", "6'1", "6'0", "5'11", "5'10", "5'9", "5'8", "5'7", "5'6", "5'5", "5'4", "5'3", "5'2", "5'1"))
+
+levels(FIFA_19$Height)
+
+# Partition Data
+
+index_FIFA <- createDataPartition(FIFA_19$Overall, p = 0.7, list = FALSE)
+
+FIFA_Train <- FIFA_19[index_FIFA,]
+
+FIFA_Test <- FIFA_19[-index_FIFA,] 
+
+# INVESTIGATE NZV, NA VALUES, ORDINAL/NOMINAL, SCALE
+
+summary(FIFA_Train)
+
+# NA VARIABLES
+
+sum((is.na(FIFA_Train)))
+
+
+# NA's Numeric:
+
+# Value, Jersey_Number, Release_Clause
+
+# NA's Categorical:
+
+# Position
+
+# NEAR ZERO VARIANCE
+
+nearZeroVar(FIFA_Train, saveMetrics = TRUE)
+
+# NO NZV
+
+
+# ORDINAL VARIABLES
+
+# Offensive WR, Defensive WR, Height
+
+# NOMINAL VARIABLES
+
+# Position, Preferred_Foot, Nationality
+
+
+blueprint_FIFA <- recipe(Overall ~ ., data = FIFA_Train)  %>% step_integer(Offensive_WR, Height) %>% step_impute_mean(Value, Jersey_Number, Release_Clause) %>% step_impute_mode(Position) %>% step_normalize(all_numeric_predictors()) %>% step_dummy(Position, Preferred_Foot, Nationality, one_hot = FALSE) 
+
+prepare_FIFA <- prep(blueprint_FIFA, new_data = FIFA_Train)
+
+baked_train_FIFA <- bake(prepare_FIFA, new_data = FIFA_Train)
+
+baked_test_FIFA <- bake(prepare_FIFA, new_data = FIFA_Test)
+
+head(baked_test_FIFA)
+
+head(baked_train_FIFA)
+
+
+```
+Here, a view of the final `baked_test_FIFA` and `baked_train_FIFA` datasets is provided. Now, the dataset has 45 columns, and we can see the blueprint was executed properly. Unfortunately, the `seperate` function provided NA values for `Defensive_WR` when I attempted to re-level the order. After attempting to diagnose the issue by viewing the help page for `seperate`, I was unsuccessful at finding the issue. So, the variable was removed in order to continue with the necerssary steps of this project.  Next, I'll perform 5 repeats of 5-fold cross validation. (K-Fold Cross Validation Approach)
+
+```{r}
+FIFA_cv <- trainControl(method="repeatedcv", number=5, repeats=5) 
+```
+
+Going forward, I will train various regression models using cross validation techniques. Additionally, I will create a Bagged Tree Model using Bootstrapping on the `baked_train_FIFA` data. When applicable, the cross validation will be used to find optimal tuning parameters for building a final model. For the Bagged Tree Model, the Out Of Bag Error (OOBE) will be used to compare against the RMSE values from cross validated models. The final model will be chosen based on the lowest RMSE/OOBE reported overall. The final model, if it is not the Bagged Tree Model, will then be built and evaluated on the `baked_test_FIFA` data. Predictions will then be made to calculate a final RMSE value, which will be reported. The best model will then be elaborated on further for its role in predictions. Each model will attempt to predict Overall using all remaining variables in the dataset at this point. 
+
+The following regression models will be trained to the data:
+
+PARAMETRIC APPROACHES
+
+1. A Basic Multiple Linear Regression Model
+
+2. A Ridge Regression Model With:
+
+lambda_grid_FIFA <- 10^seq(-5,5,length = 100)
+
+3. A Lasso Regression Model With: 
+
+lambda_grid_FIFA <- 10^seq(-5,5,length = 100)
+
+4. A Smoothing Splines Model With:
+
+tuneLength = 10
+
+5. A Local Regression Model With:
+
+param_grid_FIFA <- expand.grid(span = seq(0.1,1, 0.1), degree = 1)
+
+6. A MARS (Multivariate Adaptive Regression Splines) Model With:
+
+param_grid_MARSFIFA <- expand.grid(degree = 1:3, nprune = seq(1, 100, length.out = 10))
+
+
+NON-PARAMETRIC APPROACHES
+
+1. A K Nearest Neighbors Model With: 
+
+tuneLength = 10
+
+2. An Individual CART (Classification And Regression Trees) Tree With: 
+
+tuneLength = 100
+
+3. A Bagged Tree Model With:
+
+nbagg = 500, and rpart.control(minsplit = 2, cp = 0, xval = 0)
+
+4. A Random Forest Model With:
+
+param_grid_rfFIFA <-expand.grid(mtry = seq(1, 45, 5),    
+                          splitrule = "variance",
+                          min.node.size = 2)
+
+
+
+```{r}
+# Multiple Linear Regression Model
+
+MLR_FIFA <- train(blueprint_FIFA, data = FIFA_Train, method = "lm", trControl = FIFA_cv, metric = "RMSE")
+
+MLR_RMSE <- min(MLR_FIFA$results$RMSE)
+
+
+# Ridge Regression Model
+
+lambda_grid_FIFA <- 10^seq(-5,5,length = 100)
+
+ridge_cv_FIFA <- train(blueprint_FIFA, data = FIFA_Train, method = "glmnet", trControl = FIFA_cv, tuneGrid = expand.grid(alpha = 0, lambda = lambda_grid_FIFA), metric = "RMSE")
+
+RIDGE_RMSE <- min(ridge_cv_FIFA$results$RMSE)
+
+RIDGE_LAMBDA <- ridge_cv_FIFA$bestTune$lambda
+
+
+# Lasso Regression Model
+
+lasso_cv_FIFA <- train(blueprint_FIFA, data = FIFA_Train, method = "glmnet", trControl = FIFA_cv, tuneGrid = expand.grid(alpha = 1, lambda = lambda_grid_FIFA), metric = "RMSE")
+
+LASSO_RMSE <- min(lasso_cv_FIFA$results$RMSE)
+
+LASSO_LAMBDA <- lasso_cv_FIFA$bestTune$lambda
+
+# Smoothing Splines Model
+
+ss_cv_FIFA <- train(blueprint_FIFA, data = FIFA_Train, method = "gamSpline", trControl = FIFA_cv, tunelength = 10,  metric = "RMSE")
+
+SS_DF <- ss_cv_FIFA$bestTune$df
+
+SS_RMSE <- min(ss_cv_FIFA$results$RMSE)
+
+# Local Regression Model
+
+param_grid_FIFA <- expand.grid(span = seq(0.1,1, 0.1), degree = 1)
+
+lr_cv_FIFA <- train(blueprint_FIFA, data = FIFA_Train, method = "gamLoess", trControl = FIFA_cv, tuneGrid = param_grid_FIFA, metric = "RMSE")
+
+LR_SPAN <- lr_cv_FIFA$bestTune$span
+
+LR_RMSE <- min(lr_cv_FIFA$results$RMSE)
+
+# MARS Model 
+
+param_grid_MARSFIFA <- expand.grid(degree = 1:3, nprune = seq(1, 100, length.out = 10))
+
+MARS_cv_FIFA <- train(blueprint_FIFA, data = FIFA_Train, method = "earth", trControl = FIFA_cv, tuneGrid = param_grid_MARSFIFA, metric = "RMSE")
+
+MARS_PRUNE <- MARS_cv_FIFA$bestTune$nprune
+
+MARS_DEGREE <- MARS_cv_FIFA$bestTune$degree
+
+MARS_RMSE <- min(MARS_cv_FIFA$results$RMSE)
+
+# Knn Regression
+
+knn_cv_FIFA <- train(blueprint_FIFA, data = FIFA_Train, method = "knn", trControl = FIFA_cv, tuneLength = 10, metric = "RMSE")
+
+KNN_K <- knn_cv_FIFA$bestTune$k
+  
+KNN_RMSE <- min(knn_cv_FIFA$results$RMSE)
+
+# Individual CART Tree
+
+Tree_cv_FIFA <- train(blueprint_FIFA, data = FIFA_Train, method = "rpart", trControl = FIFA_cv, tuneLength = 100, metric = "RMSE")
+
+CP_TREE <- Tree_cv_FIFA$bestTune$cp
+
+TREE_RMSE <- min(Tree_cv_FIFA$results$RMSE)
+
+# Bagged Tree Model
+
+Bagfit_FIFA <- bagging(Overall ~ ., data = baked_train_FIFA, nbagg = 500, coob = TRUE, control = rpart.control(minsplit = 2, cp = 0, xval = 0))
+
+OOBE_FIFA <- Bagfit_FIFA$err
+
+
+# RANDOM FOREST
+
+param_grid_rfFIFA <- expand.grid(mtry = seq(1, 45, 5),    
+                          splitrule = "variance",
+                          min.node.size = 2)
+
+FIFA_RF <- train(blueprint_FIFA, data = FIFA_Train, method = "ranger", trControl = FIFA_cv, tuneGrid = param_grid_rfFIFA , metric = "RMSE")
+
+MTRY_FIFA <- FIFA_RF$bestTune$mtry
+
+RF_RMSE_FIFA <- min(FIFA_RF$results$RMSE)
+
+
+# Model Results
+
+Model <- c("MLR", "Ridge", "Lasso", "Smoothing_Spline", "Local_Regression", "MARS", "KNN", "Individual_Tree", "Bagged_Tree", "Random_Forest")
+
+CV_RMSE <- c(MLR_RMSE, RIDGE_RMSE, LASSO_RMSE, SS_RMSE, LR_RMSE, MARS_RMSE, KNN_RMSE, TREE_RMSE, OOBE_FIFA, RF_RMSE_FIFA)
+
+CV_RESULTS <- data.frame(cbind(Model,CV_RMSE)) 
+
+CV_RESULTS
+
+
+Model_Tune <- c("Ridge", "Lasso", "Smoothing_Splines", "Local_Regression", "MARS_NPRUNE", "MARS_Degree", "KNN", "Individual_Tree", "Random_Forest")
+ 
+Optimal_Tunes <- c(RIDGE_LAMBDA, LASSO_LAMBDA, SS_DF, LR_SPAN, MARS_PRUNE, MARS_DEGREE, KNN_K, CP_TREE, MTRY_FIFA)
+
+CV_TUNES <- data.frame(Model_Tune, Optimal_Tunes)
+
+CV_TUNES
+
+# Important Variables
+
+IMP_FIFA <- varImp(Bagfit_FIFA)
+
+IMP_MAX <- max(IMP_FIFA)
+
+IMP_FIFA <- IMP_FIFA %>% arrange(desc(IMP_FIFA))
+
+head(IMP_FIFA)
+
+```
+After evaluating the models, the Random Forest technique proved to be best at predicting player Overalls with an RMSE of `r RF_RMSE_FIFA`. The Bagged Tree model was really close to the Random Forest, and the third best model was the MARS technique. Cross Validation provided an optimal tuning parameter of `r MTRY_FIFA`, which will be used to build the final model. The Random Forest technique acts as a sort of "hybrid" tree building model. Normally, the tree building technique prioritizes the most important variables when choosing where to split each node. While this technique will lower the variance, it ultimately does not lower it as much as a Random Forest because the trees built are often so similar. The Random Forest technique takes a random sample of "mtry" parameters from the original dataset, and then builds trees from the most important variables in the sample at each node. Understandably, this greatly decreases the variance, and with an already low bias, the model performs very well. Above, it can be seen that the variables `Jersey_Number`, `Potential`, and `Attack_Attributes` are most important at predicting overall. While The last two are not very surprising, the fact that `Jersey_Number` is rated as most important with a reduction in SSE of `r IMP_MAX` may seem odd. However, the numbers 7, 10, and 12 are commonly worn by the most prestigious footballers in the world, so it is understandable that knowing if the player is one of these three numbers will be highly informative that they likely have a high overall. 
+
+
+However, a downfall of this technique is that the model results are not very interpretable outside of providing some context for variable importance. Nonetheless, this model will be used for building a final model, and predictions will then be made on the `baked_test_FIFA` dataset. 
+
+```{r}
+# Final Model
+
+FINAL_RF_FIFA <- ranger(Overall ~ ., data = baked_train_FIFA, num.trees = 500, mtry = FIFA_RF$bestTune$mtry, splitrule = "variance", min.node.size = 2, importance = "impurity")
+
+# Prediction on Test Data
+
+preds_RF_FIFA <- predict(FINAL_RF_FIFA, data = baked_test_FIFA, type = "response") 
+
+
+# RMSE on Test data
+
+RMSE_TEST_FIFA <- sqrt(mean((preds_RF_FIFA$predictions - baked_test_FIFA$Overall)^2))
+
+RMSE_TEST_FIFA
+
+```
+
+Perhaps not surprisingly, the RMSE value for the `baked_test_FIFA` evaluation with our final Random Forest model was extremely low at `r RMSE_TEST_FIFA`. Additionally, it was extremely close to the RMSE found after five fold cross validation repeated 5 times. This tells me that our cross validation technique was done correctly, and our predictions are pretty reliable. Below, I will close by examining the predicted overalls from our final model versus the actual overalls in the `baked_test_FIFA` data for the first six observations. 
+
+```{r}
+PREDICTED_RF <- head(preds_RF_FIFA$predictions)
+
+BAKED_OVERALLS <- head(baked_test_FIFA$Overall)
+
+DIFFERENCE <- PREDICTED_RF - BAKED_OVERALLS
+
+Comparison_FIFA <- cbind(PREDICTED_RF, BAKED_OVERALLS, DIFFERENCE)
+
+Comparison_FIFA
+```
+
+Here, the difference between the predictions and the actual overalls can be seen. At worst, the model was around 3 points below the actual overall for these six datapoints. Interestingly, the model did not overpredict the overall for any of these first 6 values. Overall, these results show that the Random Forest Technique provides a reliable model for predicting player overalls in the FIFA_19 video game. 
+
+
+IHRTLUHC
