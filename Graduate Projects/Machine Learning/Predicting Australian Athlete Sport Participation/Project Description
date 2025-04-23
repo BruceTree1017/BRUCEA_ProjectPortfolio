@@ -1,0 +1,10 @@
+This midterm project was completed during the Spring 2024 Semester for DS740: Data Mining during my Master's of Science in Data Science at the University of Wisconsin-Green Bay
+Files include the dataset in .CSV form, two ".RMD" files with project code, and the final paper as a ".PDF"
+
+
+BRIEF OVERVIEW:
+- A thorough Exploratory Data Analysis into potentially significant predictors of sports groups was performed
+- Feature Engineering was performed to make the data usable by the models
+- KNN Classification and Random Forest Models were assessed based on the accuracy metric
+- Single and Double Cross Validation were utilized for hyperparameter tuning and honest model assessment 
+- Random Forest with mtry = 1 achieved the best performance with an accuracy of 71.22%

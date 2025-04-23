@@ -1,0 +1,40 @@
+1. Output the total number of distinct city names that are in the meta.csv file. 
+
+52
+
+2. Output the fund that has the third highest average volume in 2013. 
+
+xlf.us
+
+3. Output the highest closing price and the year for the aadr.us fund each year it 
+was trading. Be sure to provide an answer for each year it was trading. 
+
+28.928	2010
+31.206	2011
+30.51	2012
+38.004	2013
+38.761	2014
+40.133	2015
+42.175	2016
+58.43	2017
+
+4. Output the founding state that had the highest total volume in 2014. 
+   
+Alaska
+   
+5. Output the year and month that had the third least amount of trading days. 
+   
+1999		3
+   
+6. Output the first and last name of the founder whose etf saw the most number of 
+profitable days. A profitable day is defined as a day where the close was higher 
+than the open. 
+
+Abigail	Jackson
+
+7. Output the fund and the year that had the lowest average closing price for that 
+fund in the first half of that year (January 1 - June 30). 
+
+gaz.us	2017
+
+

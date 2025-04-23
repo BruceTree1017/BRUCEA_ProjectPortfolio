@@ -1,0 +1,8 @@
+This folder contains two ".RMD" code files for the project, the dataset utilized as a ".csv", and the final project paper as a ".pdf"
+This final course project was completed in the Spring of 2024 for DS740, Data Mining as part of my Master's of Science in Data Science through the University of Wisconsin-Green Bay 
+
+BRIEF OVERVIEW:
+- Data on prospects from the 2009 to 2019 renditions of the NFL Scouting Combine was utilized to predict whether prospects were an “Early Round” (rounds 1-3) or
+“Late Round” selection (rounds 4-7) in the draft. 
+- 10-Fold Cross Validation was performed with Artificial Neural Network and Random Forest models. 
+- 5-Fold Outer Cross Validation was performed to honestly assess the most accurate model's performance.
