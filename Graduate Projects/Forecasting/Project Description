@@ -1,1 +1,6 @@
+This project was completed for Turf Badger, a Lawn & Pest Control company based in Wisconsin. 
+It was part of a Tableau unit for DS745: Visualizations taken in the 2024 Winter Semester at the University of Wisconsin-Green Bay as part of my Master's of Science in Data Science program.
 
+BRIEF OVERVIEW:
+- Forecasting models were deployed in Tableau to assess future numbers for products sold and revenue for the next seven weeks of operation (September 2nd – October 20th) of 2024
+- Seasonality was assessed and Mean Absolute Scaled Error (MASE) was utilized to indicate the quality/reliability of the forecast results
