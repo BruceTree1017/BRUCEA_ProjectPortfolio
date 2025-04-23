@@ -1,0 +1,748 @@
+---
+title: "Final Project Script"
+author: "Adam Bruce"
+date: "2024-04-12"
+output: html_document
+---
+
+```{r, echo = FALSE, include = FALSE}
+# Load packages here 
+library(glmnet)
+library(MASS) 
+library(dplyr)
+library(ggformula)
+library(ggplot2)
+library(plotmo)
+library(boot)
+library(caret)
+library(readr)
+library(dplyr)
+library(tidyverse)
+library(GGally)
+library(ISLR)
+library(PRROC)
+library(nnet)
+library(NeuralNetTools)
+library(rpart)
+library(randomForest)
+library(rattle)
+library(RColorBrewer)
+library(VIM)
+library(pROC)
+library(gplots)
+library(patchwork)
+library(stringr)
+library(ggpmisc)
+library(grid)
+library(gridExtra)
+source("gf_partialPlot.R")
+```
+
+#### Data Preparation and Exploration
+
+```{r, echo = FALSE, include = FALSE}
+NFL_Combine <- read_csv("~/Desktop/DS740 Data Mining/Final Project/NFL_Combine.csv")
+
+# We are focused solely on players that were drafted! So, we will start by getting rid of all the undrafted players. So, if drafted = "No", drop that row!
+
+NFL_Combine <- NFL_Combine[!(NFL_Combine$Drafted %in% "No"),]
+
+# Now, get rid of the variables "Year", "Player', "Position_Type", "School", "Position", and "Drafted"
+
+NFL_Combine <- NFL_Combine %>% dplyr::select(-Year, -Player, -Position_Type, -Drafted, -School, -Position)
+
+# Next, split "Drafted..tm.rnd.yr." into 4 variables so that we can extract the response variable we are interested in.. ROUND of player selection
+
+NFL_Combine[c('Draft_Team', 'Draft_Round', 'Pick_Number', 'Selection_Year')] <- str_split_fixed(NFL_Combine$Drafted..tm.rnd.yr., ' / ', 4)
+
+# Now, get rid of the original variable and all the newly created variables besides "Draft_Round"
+
+NFL_Combine <- NFL_Combine %>% dplyr::select(-Drafted..tm.rnd.yr., -Draft_Team, -Pick_Number, -Selection_Year)
+
+# Next, Convert the Height from Meters to Inches, the Weight from Kilograms to Pounds, Vertical Jump from centimeters to inches, Broad Jump from centimeters to inches
+# Additionally, convert the "Draft Round" variable to binary by specifying rounds 1-3 as "Early Round" and rounds 4-7 as "Late Round"
+
+NFL_Combine <- NFL_Combine %>% mutate(Height = round((Height * 39.3701), 0), Weight = round((Weight * 2.20462), 0), Vertical_Jump = round((Vertical_Jump * 0.393701), 2), Broad_Jump = round((Broad_Jump * 0.393701), 2), Draft_Round = ifelse(Draft_Round %in% c("1st", "2nd", "3rd"), "Early Round", "Late Round"))
+
+# How many missing values are there?
+sum(is.na(NFL_Combine)) 
+# 2932!!! That is a lot to handle
+
+# Now comes perhaps the hardest decision point. What to do with values that are missing. In The case that an athlete is missing all 6 Performance based tests, they will be removed! Otherwise, if the missing data is less than 10% the mean value will be imputed for all other cases! If the categorical response column is missing information, then the athlete will be removed. 
+
+# First Remove the all NA event Athletes!
+NFL_Combine <- NFL_Combine[!(is.na(NFL_Combine$Sprint_40yd) & is.na(NFL_Combine$Vertical_Jump) & is.na(NFL_Combine$Bench_Press_Reps) & is.na(NFL_Combine$Broad_Jump) & is.na(NFL_Combine$Agility_3cone) & is.na(NFL_Combine$Shuttle)),]
+
+# Now check the categorical response columns for NA's
+sum(is.na(NFL_Combine$Draft_Round))
+# No categorical information is missing. All good here!
+
+# Calculate Means for Numeric Columns
+
+Age_Mean <- round(mean(NFL_Combine$Age, na.rm = TRUE),0)
+Height_Mean <- round(mean(NFL_Combine$Height, na.rm = T), 0)
+Weight_Mean <- round(mean(NFL_Combine$Weight, na.rm = T), 0)
+Dash_Mean <- round(mean(NFL_Combine$Sprint_40yd, na.rm = T), 2)
+Vertical_Mean <- round(mean(NFL_Combine$Vertical_Jump, na.rm = T), 2)
+Bench_Mean <- round(mean(NFL_Combine$Bench_Press_Reps, na.rm = T), 0)
+Broad_Mean <- round(mean(NFL_Combine$Broad_Jump, na.rm = T), 2)
+Cone3_Mean <- round(mean(NFL_Combine$Agility_3cone, na.rm = T), 2)
+Shuttle_Mean <- round(mean(NFL_Combine$Shuttle, na.rm = T), 2)
+BMI_Mean <- round(mean(NFL_Combine$BMI, na.rm = T), 5)
+PlayerType_Mean <- round(mean(NFL_Combine$Player_Type, na.rm = T), 0)
+
+Means <- rbind(Age_Mean, Height_Mean, Weight_Mean, Dash_Mean, Vertical_Mean, Bench_Mean, Broad_Mean, Cone3_Mean, Shuttle_Mean, BMI_Mean, PlayerType_Mean)
+
+# Determine number of NA values per numeric variable
+
+Age_NA <- sum(is.na(NFL_Combine$Age))
+Height_NA <- sum(is.na(NFL_Combine$Height))
+Weight_NA <- sum(is.na(NFL_Combine$Weight))
+Dash_NA <- sum(is.na(NFL_Combine$Sprint_40yd))
+Vertical_NA <- sum(is.na(NFL_Combine$Vertical_Jump))
+Bench_NA <- sum(is.na(NFL_Combine$Bench_Press_Reps))
+Broad_NA <- sum(is.na(NFL_Combine$Broad_Jump))
+Cone3_NA <- sum(is.na(NFL_Combine$Agility_3cone))
+Shuttle_NA <- sum(is.na(NFL_Combine$Shuttle)) 
+BMI_NA <- sum(is.na(NFL_Combine$BMI))
+PlayerType_NA <- sum(is.na(NFL_Combine$Player_Type)) 
+
+NAs <- rbind(Age_NA, Height_NA, Weight_NA, Dash_NA, Vertical_NA, Bench_NA, Broad_NA, Cone3_NA, Shuttle_NA, BMI_NA, PlayerType_NA)
+
+# Name For Variable
+
+Age <- c("Age (years)")
+Height <- c("Height (inches")
+Weight <- c("Weight (pounds)")
+Dash40 <- c("40 Yard Dash Time (seconds)")
+Vertical <- c("Vertical Jump (inches)")
+Bench <- c("225 Pound Bench Press Reps")
+Broad <- c("Broad Jump (inches)")
+Cones <- c("30 Yard Three Cone Drill Time (seconds)")
+Shuttle <- c("20 Yard Shuttle Drill Time (seconds)")
+BMI <- c("Body Mass Index (kg/m^2)")
+PlayerType <- c("Player Type (Offense or Defense)")
+
+Variable_Names <- rbind(Age, Height, Weight, Dash40, Vertical, Bench, Broad, Cones, Shuttle, BMI, PlayerType)
+
+# Combine to a single Data Frame!
+Impution_Summaries <- as.data.frame(cbind(Variable_Names, Means, NAs))
+Impution_Summaries <- Impution_Summaries %>%
+  rename(
+    Variable = V1,
+    Mean = V2,
+    Total_NAs = V3)
+Impution_Summaries$Mean <- round(as.numeric(Impution_Summaries$Mean), 2)
+Impution_Summaries$Total_NAs <- as.numeric(Impution_Summaries$Total_NAs)
+Impution_Summaries <- Impution_Summaries %>% mutate(Percent_Missing_Before = round(((Total_NAs/2212) * 100), 2))
+
+### Make A GG Object
+
+ggp_impution_table_before <- 
+  ggplot()+
+  theme_void()+
+  annotate(geom = "table",
+          x = 1,
+          y = 1, 
+          label = list(Impution_Summaries))
+
+```
+
+```{r, echo = FALSE, include = FALSE}
+# We are missing 31.56% of observations for the three cone drill... This is a big problem. Removing the rows where this variable is NA seems reasonable, and may reduce the amount of missing data in our other variables!
+
+# NOTE: After first removing the NA 3 cone drill observations, we still had 12% of the data missing for Bench Press. So, those rows were removed because we remained over the 1000 observation threshold. 
+
+# First Remove the all NA event Athletes!
+NFL_Combine <- NFL_Combine[!(is.na(NFL_Combine$Agility_3cone)),]
+NFL_Combine <- NFL_Combine[!(is.na(NFL_Combine$Bench_Press_Reps)),]
+
+# Now perform the same summary as before and patch together the results below for figure one
+
+# Calculate Means for Numeric Columns
+
+Age_Mean <- round(mean(NFL_Combine$Age, na.rm = TRUE),0)
+Height_Mean <- round(mean(NFL_Combine$Height, na.rm = T), 0)
+Weight_Mean <- round(mean(NFL_Combine$Weight, na.rm = T), 0)
+Dash_Mean <- round(mean(NFL_Combine$Sprint_40yd, na.rm = T), 2)
+Vertical_Mean <- round(mean(NFL_Combine$Vertical_Jump, na.rm = T), 2)
+Bench_Mean <- round(mean(NFL_Combine$Bench_Press_Reps, na.rm = T), 0)
+Broad_Mean <- round(mean(NFL_Combine$Broad_Jump, na.rm = T), 2)
+Cone3_Mean <- round(mean(NFL_Combine$Agility_3cone, na.rm = T), 2)
+Shuttle_Mean <- round(mean(NFL_Combine$Shuttle, na.rm = T), 2)
+BMI_Mean <- round(mean(NFL_Combine$BMI, na.rm = T), 5)
+PlayerType_Mean <- round(mean(NFL_Combine$Player_Type, na.rm = T), 0)
+
+Means <- rbind(Age_Mean, Height_Mean, Weight_Mean, Dash_Mean, Vertical_Mean, Bench_Mean, Broad_Mean, Cone3_Mean, Shuttle_Mean, BMI_Mean, PlayerType_Mean)
+
+# Determine number of NA values per numeric variable
+
+Age_NA <- sum(is.na(NFL_Combine$Age))
+Height_NA <- sum(is.na(NFL_Combine$Height))
+Weight_NA <- sum(is.na(NFL_Combine$Weight))
+Dash_NA <- sum(is.na(NFL_Combine$Sprint_40yd))
+Vertical_NA <- sum(is.na(NFL_Combine$Vertical_Jump))
+Bench_NA <- sum(is.na(NFL_Combine$Bench_Press_Reps))
+Broad_NA <- sum(is.na(NFL_Combine$Broad_Jump))
+Cone3_NA <- sum(is.na(NFL_Combine$Agility_3cone))
+Shuttle_NA <- sum(is.na(NFL_Combine$Shuttle)) 
+BMI_NA <- sum(is.na(NFL_Combine$BMI))
+PlayerType_NA <- sum(is.na(NFL_Combine$Player_Type)) 
+
+NAs <- rbind(Age_NA, Height_NA, Weight_NA, Dash_NA, Vertical_NA, Bench_NA, Broad_NA, Cone3_NA, Shuttle_NA, BMI_NA, PlayerType_NA)
+
+# Name For Variable
+
+Age <- c("Age (years)")
+Height <- c("Height (inches")
+Weight <- c("Weight (pounds)")
+Dash40 <- c("40 Yard Dash Time (seconds)")
+Vertical <- c("Vertical Jump (inches)")
+Bench <- c("225 Pound Bench Press Reps")
+Broad <- c("Broad Jump (inches)")
+Cones <- c("30 Yard Three Cone Drill Time (seconds)")
+Shuttle <- c("20 Yard Shuttle Drill Time (seconds)")
+BMI <- c("Body Mass Index (kg/m^2)")
+PlayerType <- c("Player Type (Offense or Defense)")
+
+Variable_Names <- rbind(Age, Height, Weight, Dash40, Vertical, Bench, Broad, Cones, Shuttle, BMI, PlayerType)
+
+# Combine to a single Data Frame!
+Impution_Summaries <- as.data.frame(cbind(Variable_Names, Means, NAs))
+Impution_Summaries <- Impution_Summaries %>%
+  rename(
+    Variable = V1,
+    Mean = V2,
+    Total_NAs = V3)
+Impution_Summaries$Mean <- round(as.numeric(Impution_Summaries$Mean), 2)
+Impution_Summaries$Total_NAs <- as.numeric(Impution_Summaries$Total_NAs)
+Impution_Summaries <- Impution_Summaries %>% mutate(Percent_Missing_After = round(((Total_NAs/2212) * 100), 2))
+
+### Make A GG Object
+
+ggp_impution_table_after <- 
+  ggplot()+
+  theme_void()+
+  annotate(geom = "table",
+          x = 1,
+          y = 1, 
+          label = list(Impution_Summaries))
+
+```
+
+```{r, echo = FALSE, fig.width = 14, fig.height = 4}
+impution_patchwork <- ggp_impution_table_before + ggp_impution_table_after
+  
+  
+impution_patchwork <- impution_patchwork + plot_annotation(title = 'Table 1: Percent Missing Values Before Removing 698 Missing Rows for Cone Drill and 280 Missing Rows for Bench Press Reps (LEFT) Versus After Removal (RIGHT)', subtitle = '2009 to 2019 NFL Combine Data')
+
+impution_patchwork
+
+# Removal was a huge success! we still have 1234 observations with a maximum of less than 1% missing values for any single variable! Impution should work great now :^)
+
+```
+
+```{r, echo = FALSE, include = FALSE}
+# Now, impution is ideal for the missing values. Impute the mean values FROM AFTER REMOVAL OF MISSING ROWS! 
+# Also, make sure response variable has an adequate number of observations for each subcategory!
+
+# Impute Means for Age, 40 Yard Dash, Vertical Jump, Broad Jump, and Shuttle Drill Time!
+
+NFL_Combine <- NFL_Combine %>% mutate(Age = ifelse(is.na(Age), Age_Mean, Age), Sprint_40yd = ifelse(is.na(Sprint_40yd), Dash_Mean, Sprint_40yd), Vertical_Jump = ifelse(is.na(Vertical_Jump), Vertical_Mean, Vertical_Jump), Broad_Jump = ifelse(is.na(Broad_Jump), Broad_Mean, Broad_Jump), Shuttle = ifelse(is.na(Shuttle), Shuttle_Mean, Shuttle))
+
+# NO NA values should exist now... lets check
+
+sum(is.na(NFL_Combine))
+# We are golden :^)
+
+# Now ensure that we have enough data in each of the response categories!
+sum(NFL_Combine$Draft_Round == "Early Round")
+sum(NFL_Combine$Draft_Round == "Late Round")
+
+# Almost 50/50 at 552 and 682! We are all set to go with exploratory data analysis
+
+
+```
+
+```{r, echo = FALSE, fig.width = 16, fig.height = 12}
+# Classification With Random Forest
+# Classigicatin with regular Logistic Regression or LASSO/ENET Logistic Regression if multicolinearity exists
+# Possibly an ANN if non-linear with resuduals?
+
+# First check for multicolinearity in predictors
+# Select only numeric predictors
+NFL_Numeric <- NFL_Combine %>%
+  dplyr::select_if(is.numeric)
+
+
+NFL_Numeric %>% ggpairs(title = "Figure 1: Assessing Multicolinearity Among Numeric Predictors in the NFL Combine Dataset")
+# 20 cases of multicolinearity > 0.70 or < -0.70
+# out of 45 comparisons.
+```
+
+```{r, warning = FALSE, echo = FALSE, include = FALSE}
+# First fit a normal logistic regression model to the full data
+# Convert response into 0/1 where early = 1 (success)
+NFL_Logistic <- NFL_Combine %>% mutate(Draft_Round = as.factor(ifelse(Draft_Round =="Early Round", 1, 0)))
+
+# Model
+logiNFL_Combine <- glm(Draft_Round ~., data = NFL_Logistic, 
+                   family = "binomial")
+
+
+# Predict the probability (p) of early round
+probabilities <- predict(logiNFL_Combine, type = "response")
+predicted.classes <- ifelse(probabilities > 0.5, "Early Round", "Late Round")
+NFL_Numeric_Predictors <- NFL_Logistic %>% dplyr::select(-Draft_Round, -Player_Type)
+
+predictors <- colnames(NFL_Numeric_Predictors)
+# Bind the logit and tidying the data for plot
+Logistic_Data <- NFL_Numeric_Predictors %>%
+  mutate(logit = log(probabilities/(1-probabilities))) %>%
+  gather(key = "predictors", value = "predictor.value", -logit)
+
+# Not plot the relationships!
+Normal_NFLLogi <- 
+  ggplot(Logistic_Data, aes(logit, predictor.value))+
+  geom_point(size = 0.5, alpha = 0.5) +
+  geom_smooth(formula = y ~ x, method = "loess", se = F)+
+  theme_bw() + 
+  facet_wrap(~predictors, scales = "free_y")
+
+# Responses appear quadratic in nature... try a square root transformation on all variables besides age
+
+NFL_Logistic$Height <- sqrt(NFL_Logistic$Height)
+NFL_Logistic$Weight <- sqrt(NFL_Logistic$Weight)
+NFL_Logistic$Sprint_40yd <- sqrt(NFL_Logistic$Sprint_40yd)
+NFL_Logistic$Vertical_Jump <- sqrt(NFL_Logistic$Vertical_Jump)
+NFL_Logistic$Bench_Press_Reps <- sqrt(NFL_Logistic$Bench_Press_Reps)
+NFL_Logistic$Broad_Jump <- sqrt(NFL_Logistic$Broad_Jump)
+NFL_Logistic$Agility_3cone <- sqrt(NFL_Logistic$Agility_3cone)
+NFL_Logistic$Shuttle <- sqrt(NFL_Logistic$Shuttle)
+NFL_Logistic$BMI <- sqrt(NFL_Logistic$BMI)
+
+# Model Again
+logiNFL_Combine2 <- glm(Draft_Round ~., data = NFL_Logistic, 
+                   family = "binomial")
+
+
+# Predict the probability (p) of early round
+probabilities <- predict(logiNFL_Combine2, type = "response")
+predicted.classes <- ifelse(probabilities > 0.5, "Early Round", "Late Round")
+NFL_Numeric_Predictors2 <- NFL_Logistic %>% dplyr::select(-Draft_Round, -Player_Type)
+
+predictors <- colnames(NFL_Numeric_Predictors2)
+# Bind the logit and tidying the data for plot
+Logistic_Data <- NFL_Numeric_Predictors2 %>%
+  mutate(logit = log(probabilities/(1-probabilities))) %>%
+  gather(key = "predictors", value = "predictor.value", -logit)
+
+# Not plot the relationships!
+Sqrt_NFLLogi <-
+  ggplot(Logistic_Data, aes(logit, predictor.value))+
+  geom_point(size = 0.5, alpha = 0.5) +
+  geom_smooth(formula = y ~ x, method = "loess", se = F)+
+  theme_bw() + 
+  facet_wrap(~predictors, scales = "free_y")
+
+```
+
+```{r, echo = FALSE, fig.width = 15, fig.height = 6, warning = FALSE}
+grid.arrange(Normal_NFLLogi,Sqrt_NFLLogi, ncol=2, nrow=1,
+     top = textGrob("Figure 2: Numeric Predictor Variable Values VS Logit for Non-Transformed (LEFT) and Square Root Transformed (RIGHT) NFL Combine Logistic Regression Models", gp=gpar(fontsize=12,font=3)))
+
+```
+
+#### Model Fitting
+
+```{r, echo = FALSE, include = FALSE}
+# One Hot encode Player_Type
+
+NFL_Combine <- NFL_Combine %>% mutate(Player_Type = ifelse(Player_Type == "offense", 1, 0))
+
+# Ensure response is a factor
+
+NFL_Combine$Draft_Round <- as.factor(NFL_Combine$Draft_Round)
+NFL_Combine <- within(NFL_Combine, Draft_Round <- relevel(Draft_Round, ref = "Late Round"))
+
+
+### Single CV
+
+set.seed(3)
+
+# Single 10-fold CV
+train_method_NFL= trainControl(method="cv", number=10)
+
+# specify data to be used for model selection - best for future integration into doubleCV
+dataused = NFL_Combine
+
+# mtry integers 1:11
+mtry_vals <- c(1:11)
+
+# size integers 1:15
+size_vals <- c(1:15)
+
+# decay values try between seq(1, 2, by = 0.1) first
+decay_vals = seq(1, 2, by = 0.1)
+
+# Single CV
+
+# Artificial Neural Network
+fit_singlecaret_ANN_NFL = 
+                    train(Draft_Round ~ .,
+                    data = NFL_Combine,
+                    method = "nnet",
+                    tuneGrid = expand.grid(size = size_vals, decay = decay_vals),
+                    preProc = c("center", "scale"),
+                    trace = FALSE,
+                    trControl = train_method_NFL)
+
+  
+# Random Forest
+fit_singlecaret_rf_NFL= 
+                        train(Draft_Round ~ ., 
+                        data = NFL_Combine, method = "rf", metric = "Accuracy",
+                        tuneGrid = expand.grid(mtry = mtry_vals),
+                        trControl = train_method_NFL)
+
+# Check if ANN Converged!
+
+fit_singlecaret_ANN_NFL$finalModel$convergence
+# We see the model converged as we have 0!
+
+# Best Tunes:
+ANN_Size <- fit_singlecaret_ANN_NFL$bestTune$size
+ANN_Decay <- fit_singlecaret_ANN_NFL$bestTune$decay
+RF_Mtry <- fit_singlecaret_rf_NFL$bestTune$mtry
+ANN_Size
+ANN_Decay
+RF_Mtry
+# Accuracy Maximums
+Max_ANN <- round(max(fit_singlecaret_ANN_NFL$results$Accuracy),4)
+Max_RF <- round(max(fit_singlecaret_rf_NFL$results$Accuracy),4)
+Max_ANN
+Max_RF
+# Accuracy is Maximzed at Size = 2 and Decay = 1.3 with Accuracy of 0.6661 for an ANN
+
+
+### Create Single CV Summary Table
+
+Model <- c("Artificial Neural Network", "Random Forest")
+Parameter_Range <- c("Size = 1:15 and Decay = seq(1, 2, by = 0.1)", "mtry = 1:11")
+Optimal_Parameter <- c("Size = 2 and Decay = 1", "mtry = 3")
+Maximum_Accuracy <- c(Max_ANN, Max_RF)
+
+SingleCV_Results <- as.data.frame(cbind(Model, Parameter_Range, Optimal_Parameter, Maximum_Accuracy))
+SingleCV_Results
+
+# Store Accuracy and Decay/Size Values For Each CV Fold
+Model_Accuracy <- fit_singlecaret_ANN_NFL$results$Accuracy
+Model_Size <- fit_singlecaret_ANN_NFL$results$size
+Model_Decay <- fit_singlecaret_ANN_NFL$results$decay
+
+Model_Params <- as.data.frame(cbind(Model_Accuracy, Model_Size, Model_Decay))
+
+```
+
+##### Single Cross Validation
+
+```{r, echo = FALSE, fig.width = 8}
+### Output table of Single CV Results
+
+knitr::kable(SingleCV_Results, "simple", caption = "Table 2: Results of Single 10-Fold Cross Validation with Artificial Neural Network and Random Forest for the NFL Combine Dataset")
+
+### Graph Accuracies vs Size and vs Decay
+
+Combine_Size_Decay <- 
+  ggplot(Model_Params, aes(x = Model_Size, y = Model_Accuracy, color = Model_Decay))+
+  geom_point()+
+  ylab("Model Accuracy")+
+  xlab("Model Hidden Nodes")+
+  ggtitle("Figure 3: Highest Accuracy is obtained with 2 Hidden Nodes and a Weight Decay of 1
+      for 10-Fold CV with an Artificial Neural Network on the NFL Combine Dataset")+
+  theme_classic()
+
+Combine_Size_Decay
+```
+
+```{r, echo = FALSE, include = FALSE, warning = FALSE}
+
+### Double CV
+
+set.seed(3) # For consistency of cross validation
+
+# inner 10-fold CV
+train_method_NFL = trainControl(method="cv", number=10)
+
+# outer 5-fold CV
+n_NFL = dim(NFL_Combine)[1]
+nfolds_outer = 5  # number of fold in outer CV
+groups = rep(1:nfolds_outer,length=n_NFL)  #produces list of group labels
+cvgroups = sample(groups,n_NFL)  #orders randomly
+
+# Define Prediction Storage Vector
+predicted_NFL_outer <- factor(rep(NA, n_NFL), 
+                                   levels = levels(NFL_Combine$Draft_Round))
+
+# mtry integers 1:11
+mtry_vals <- c(1:11)
+
+# size integers 1:15
+size_vals <- c(1:15)
+
+# decay values try between seq(1, 2, by = 0.1) first
+decay_vals = seq(1, 2, by = 0.1)
+
+for (j in 1:nfolds_outer) {
+  in_train = (cvgroups != j)
+  in_valid = (cvgroups == j) 
+  traindata = NFL_Combine[in_train,]
+  validdata = NFL_Combine[in_valid,]
+  
+  dataused_nfl = traindata  
+
+  ################ Step 1. ##############
+  # cross-validation of various classification models
+  
+  # Artificial Neural Network
+  fit_caret_ANN_NFL = train(Draft_Round ~ .,
+                           data = dataused_nfl,
+                           method = "nnet",
+                           tuneGrid = expand.grid(size = size_vals, 
+                                                  decay = decay_vals),
+                           preProc = c("center", "scale"),
+                           trace = FALSE,
+                           trControl = train_method_NFL)
+  
+  # Random Forest
+  fit_caret_rf_NFL = train(Draft_Round ~ ., 
+                        data = dataused_nfl, method = "rf", metric = "Accuracy",
+                        tuneGrid = expand.grid(mtry = mtry_vals),
+                        trControl = train_method_NFL)
+  
+  ################ Step 2. ##############
+  
+  ## Store Accuracy Values 
+  
+  allACCURACYvaluesCV_ANN = fit_caret_ANN_NFL$results$Accuracy
+  allACCURACYvaluesCV_rf = fit_caret_rf_NFL$results$Accuracy
+  
+  all_train_output <- list(fit_caret_ANN_NFL, fit_caret_rf_NFL)
+
+  ###	  output all_Accuracy_CV    ###
+  ###	   and all_train_output     ###
+  
+  ################ Step 3. ##############
+  
+  # Select Max ANN Accuracy
+  
+  which_best_ANN <- which.max(allACCURACYvaluesCV_ANN)
+  AccuracyvalueCV_ANN <- allACCURACYvaluesCV_ANN[which_best_ANN]
+  bestsize <- size_vals[which_best_ANN]
+  bestdecay <- decay_vals[which_best_ANN]
+  best_modelfit_ANN <- fit_caret_ANN_NFL$finalModel
+  
+  # Select Max RF Accuracy
+  
+  which_best_rf <- which.max(allACCURACYvaluesCV_rf)
+  AccuracyvalueCV_rf<- allACCURACYvaluesCV_rf[which_best_rf]
+  best_modelfit_rf <- fit_caret_rf_NFL$finalModel
+  
+  # Define Possible Best Models
+  
+  all_methods <- c("Artificial Neural Network", "Random Forest")
+  all_methods_max_CV_Accuracy <- c(AccuracyvalueCV_ANN, AccuracyvalueCV_rf)
+  
+  # print best model
+  cat("\n\nThe best model in outer-loop", j, 
+      "is", all_methods[which.max(all_methods_max_CV_Accuracy)], 
+      "\nwith Accuracy=", all_methods_max_CV_Accuracy[which.max(all_methods_max_CV_Accuracy)]
+  )
+  
+  cat('\nAt time', format(Sys.time(),'%H:%M:%S'))  # checking how long to run
+  
+  # Print Best Mtry
+  print(paste("Best mtry: ", best_modelfit_rf$tuneValue))
+  
+  # Print Best size
+  print(paste("Best size: ", best_modelfit_ANN$tuneValue$size))
+  
+  # Print Best Decay
+  print(paste("Best decay: ", best_modelfit_ANN$tuneValue$decay))
+  
+  # store all of the train-function outputs in a list
+  # same order as the all_methods
+  all_fit_caret_output <- list(fit_caret_ANN_NFL, 
+                               fit_caret_rf_NFL)
+
+  # programmatically identify the utilized output from `train` function
+  best_fit_caret_output <- all_fit_caret_output[[which.max(all_methods_max_CV_Accuracy)]]
+
+  # Make Predictions For Draft_Round With Best Model
+  pred_Round <- best_fit_caret_output %>% predict(validdata)
+  
+  # add to predicted_NFL_outer at locations of validation data
+  predicted_NFL_outer[in_valid] <- pred_Round
+}
+
+# Honest Assessment
+table(predicted_NFL_outer,NFL_Combine$Draft_Round)
+Accuracy_CV = sum(predicted_NFL_outer == NFL_Combine$Draft_Round)/n_NFL
+Accuracy_CV
+
+# Confusion Matrix
+
+# create new confusion matrix for Actual + Predicted labels
+conf_NFL <- table(Actual = NFL_Combine$Draft_Round, Predicted = predicted_NFL_outer)
+
+conf_data_NFL <- as.data.frame(as.table(conf_NFL))
+
+
+
+### Results Table Creation
+Outer_Loop <- c(1:5)
+Optimal_Model <- c("Artificial Neural Network", "Artificial Neural Network", "Artificial Neural Network", "Artificial Neural Network", "Artificial Neural Network")
+Optimal_Tune <- c("Size = 2 & Decay = 1", "Size = 1 & Decay = 1.6", "Size = 5 & Decay = 1.2", "Size = 2 & Decay = 1.2", "Size = 13 & Decay = 1.5")
+Maximum_Accuracy <- c("0.6503", "0.6678", "0.6617", "0.6697", "0.6701")
+
+DoubleCV_Results <- as.data.frame(cbind(Outer_Loop, Optimal_Model, Optimal_Tune, Maximum_Accuracy))
+```
+
+##### Double Cross Validation
+
+```{r, echo = FALSE, warning = FALSE, fig.width = 8}
+### Table of Double CV Results
+
+knitr::kable(DoubleCV_Results, "simple", caption = "Table 3: Results of Double 5-Fold Cross Validation with Artificial Neural Network and Random Forest Models for the NFL Combine Dataset")
+
+### Confusion Matrix For Double CV
+
+ggplot(conf_data_NFL, aes(x = Predicted, y = Actual, fill = Freq)) +
+  geom_tile() + theme_bw() + coord_equal() +
+  ggtitle("Figure 4: NFL Combine Confusion Matrix for Honest 
+Predictions Assessment with 5-Fold Double CV ")+
+  labs(caption = "Honest Accuracy: 0.6524 (65.24%)")+
+  scale_fill_distiller(palette = "Blues", direction = 1) +
+  guides(fill = FALSE) +
+  geom_text(aes(label = Freq), color = "black", size = 8)
+```
+
+#### Model Interpretation
+
+```{r, echo = FALSE, include = FALSE}
+# First Extract the final model from Single CV!
+
+NFL_SingleCV_Best = fit_singlecaret_ANN_NFL$finalModel
+
+# Now, get a plot of variable importance with Olden's Algorithm
+
+ANN_VarImp_NFL <-
+  olden(NFL_SingleCV_Best)+
+  theme(
+    # LABELS APPEARANCE
+    axis.title.x = element_text(size=14, face="bold", colour = "black"),    
+    axis.title.y = element_text(size=14, face="bold", colour = "black"),    
+    axis.text.x = element_text(size=12, face="bold", colour = "black"),
+    axis.text.y = element_text(size=12, face="bold", colour = "black")
+  )
+
+# Extract the importance values and fix to a dataframe
+ANN_VarImp_Values <- olden(NFL_SingleCV_Best, bar_plot = FALSE)
+Variable <- c("Age", "Height", "Weight", "Sprint_40yd", "Vertical_Jump", "Bench_Press_Reps", "Broad_Jump", "Agility_3cone", "Shuttle", "BMI")
+
+ANN_VarImp_Values$importance <- as.numeric(ANN_VarImp_Values$importance)
+ANN_VarImp_Values$importance <- round(ANN_VarImp_Values$importance, 4)
+ANN_VarImp_Values <- as.data.frame(cbind(Variable, ANN_VarImp_Values$importance))
+ANN_VarImp_Values <- ANN_VarImp_Values %>% rename(importance = V2)
+ANN_VarImp_Values$importance <- as.numeric(ANN_VarImp_Values$importance)
+ANN_VarImp_Values <- ANN_VarImp_Values %>% mutate(importance = abs(ANN_VarImp_Values$importance))
+ANN_VarImp_Values <- ANN_VarImp_Values[order(ANN_VarImp_Values$importance, decreasing = TRUE),]
+
+# Now save to a gg object!
+
+ggp_ANN_VarImp_table <- 
+  ggplot()+
+  theme_void()+
+  annotate(geom = "table",
+          x = 1,
+          y = 1, 
+          label = list(ANN_VarImp_Values))
+```
+
+```{r, echo = FALSE, fig.width = 18, fig.height = 10}
+VarImp_patchwork <- ANN_VarImp_NFL / ggp_ANN_VarImp_table
+  
+  
+VarImp_patchwork <- VarImp_patchwork + plot_annotation(title = 'Figure 5: Variable Importance Via Oldens Algorithm of the Best 10-Fold Single Cross Validation Artificial Neural Network for the NFL Combine Dataset (ABOVE) with Absolute Value Variable Importance Table (BELOW)')
+
+VarImp_patchwork
+```
+
+```{r, echo = FALSE, include = FALSE}
+### Now, lets make some partial plots of the top four most important variables for each level of the response to aid in visualization. 
+
+# For Positive Associated with Early Round! Graph Weight and Broad Jump
+
+# Weight
+ANN_Weight_Early <- 
+  gf_partialPlot(fit_singlecaret_ANN_NFL, NFL_Combine, x.var = "Weight", which.class = "Early Round") %>% gf_labs(title = "Increasing Weight Increases the Chances of an Early Round Prediction")
+
+ANN_Weight_Early
+
+ANN_Weight_Late <- 
+  gf_partialPlot(fit_singlecaret_ANN_NFL, NFL_Combine, x.var = "Weight", which.class = "Late Round") %>% gf_labs(title = "Increasing Weight Decreases the Chances of a Late Round Prediction")
+
+ANN_Weight_Late
+
+# Broad Jump 
+ANN_Broad_Early <- 
+  gf_partialPlot(fit_singlecaret_ANN_NFL, NFL_Combine, x.var = "Broad_Jump", which.class = "Early Round") %>% gf_labs(title = "Increasing Broad Jump Distances Increases the Chances of an Early Round Prediction")
+
+ANN_Broad_Early
+
+ANN_Broad_Late <- 
+  gf_partialPlot(fit_singlecaret_ANN_NFL, NFL_Combine, x.var = "Broad_Jump", which.class = "Late Round") %>% gf_labs(title = "Increasing Broad Jump Distances Decreases the Chances of a Late Round Prediction")
+
+ANN_Broad_Late
+
+# For Negative Associations with Early Rounds, graph Sprint_40yd and Age
+
+# 40 Yard Dash 
+ANN_Dash_Early <- 
+  gf_partialPlot(fit_singlecaret_ANN_NFL, NFL_Combine, x.var = "Sprint_40yd", which.class = "Early Round") %>% gf_labs(title = "Slower 40 Yard Dash Times Decrease the Chances of an Early Round Prediction")
+
+ANN_Dash_Early
+
+ANN_Dash_Late <- 
+  gf_partialPlot(fit_singlecaret_ANN_NFL, NFL_Combine, x.var = "Sprint_40yd", which.class = "Late Round") %>% gf_labs(title = "Slower 40 Yard Dash Times Increase the Chances of a Late Round Prediction")
+
+ANN_Dash_Late
+
+# 40 Yard Dash 
+ANN_Age_Early <- 
+  gf_partialPlot(fit_singlecaret_ANN_NFL, NFL_Combine, x.var = "Age", which.class = "Early Round") %>% gf_labs(title = "Older Player Age Decreases the Chances of an Early Round Prediction")
+
+ANN_Age_Early
+
+ANN_Age_Late <- 
+  gf_partialPlot(fit_singlecaret_ANN_NFL, NFL_Combine, x.var = "Age", which.class = "Late Round") %>% gf_labs(title = "Older Player Age Increase the Chances of a Late Round Prediction")
+
+ANN_Age_Late
+
+```
+
+```{r, echo = FALSE, fig.width = 17, fig.height = 6}
+grid.arrange(ANN_Weight_Early, ANN_Weight_Late, ncol = 2, top = "Figure 6: Partial Dependencies of Weight for the Draft Round NFL Combine Response Variable")
+```
+
+```{r, echo = FALSE, fig.width = 17, fig.height = 6}
+grid.arrange(ANN_Broad_Early, ANN_Broad_Late, ncol = 2, top = "Figure 7: Partial Dependencies of Broad Jump for the Draft Round NFL Combine Response Variable")
+```
+
+```{r, echo = FALSE, fig.width = 17, fig.height = 6}
+grid.arrange(ANN_Dash_Early, ANN_Dash_Late, ncol = 2, top = "Figure 8: Partial Dependencies of 40 Yard Dash Times (Sprint_40yd) for the Draft Round NFL Combine Response Variable")
+```
+
+```{r, echo = FALSE, fig.width = 17, fig.height = 6}
+grid.arrange(ANN_Age_Early, ANN_Age_Late, ncol = 2, top = "Figure 9: Partial Dependencies of Player Age for the Draft Round NFL Combine Response Variable")
+```
