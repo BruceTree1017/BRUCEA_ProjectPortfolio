@@ -1,0 +1,422 @@
+---
+title: "Kentucky Math Scores"
+author: "Adam Bruce, Itai Bojdak-Yates, April Nguyen"
+date: "02/18/2022"
+output:
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message=FALSE, warning=FALSE, fig.height=4, fig.width=6)
+# feel free to change fig.height or fig.width here or in specific chunk headings. 
+```
+
+
+```{r}
+# load packages - add any you would like
+library(tidyverse)
+library(lme4)
+library(lmerTest)
+library(gridExtra)
+library(knitr)
+```
+
+## Abstract 
+
+Educational achievement varies based on race, gender, and socioeconomic status (SES). Given the importance of education to one’s future success, this variation can have enormous consequences for students throughout their lives. We examined math scores from eight graders in Kentucky to determine the effects of the above variables on academic achievement. After testing several models, we chose a mixed effect model wherein math scores were a function of gender, race, and school district SES. We included an interaction term between gender and SES. We also included random effect terms for school and district, as well as a random slope term for race between different schools. This model showed that math scores are strongly correlated with race and SES and less correlated with gender. It also showed some interaction between gender and SES and between ethnicity gaps and average school math scores.
+
+
+\newpage
+
+### Background and Significance   
+
+Educational achievement often shows disparities based on race, gender, and socioeconomic status (SES), and numerous studies have sought to understand and quantify these disparities. Reardon (2019) found a large and near-universal difference between black and white students’ performance on standardized test scores, which black students performing worse. This difference has shrunk over the past several decades, but it has not disappeared. It shows some correlation with racial income inequality and school segregation, but much of the variation in the size of this difference is independent of those factors. With respect to other racial groups, Latino students also tend to score worse than white students, while Asian students tend to score slightly better. Other studies (Kirby, 2007) have found that test scores do not accurately predict collegiate academic success for nonwhite students, which is in line with the difference in scores above.
+
+With respect to gender, achievement gaps are smaller (Reardon, Fahle, Kalogrides, Podolsky, & Zárate, 2018). Female students consistently outperform male students in English language arts; disparities vary by district for math. Math disparities are correlated with income levels and income disparities. Wealthier districts and districts where men make a greater share of the income tend to have larger math disparities in favor of male students, while poorer districts and districts where women earn a more equal share of the income tend to produce better scores for female students. Male students tend to perform worse than female students in general, with more procrastination and less academic satisfaction (Balkis & Duru, 2017). Gender achievement gaps are notably smaller and less consistent than those based on race.
+
+Socioeconomic achievement gaps are large and persistent. Wealthier students and students from wealthier districts consistently outperform their poorer counterparts by wide margins and across subjects, a fact that has not changed in decades. However, this picture can become complicated in certain situations. College students who need financial aid tend to outperform students who do not (Kirby, 2007), suggesting that poorer students in college may have more drive and be more successful. At the same time, the need to work while in college often makes students more likely to drop out, which implies an advantage for wealthier students. Thus, the effect of SES on academic achievement is clear in general but complicated in specifics.
+
+We examined test scores from eighth graders in Kentucky. The students took the California Basic Educational Skills Test in math and reading; our examination focused exclusively on math scores. We asked which factors predicted math score, considering race, gender, school and district SES, and interactions between these variables. We also considered random effects related to school and district. We expected to see large differences in test score based on race and SES, and possibly some differences based on gender. We also expected to see some interactions between gender and race or SES and some random slopes with respect to race and school/SES.
+
+
+### Data  
+
+The original data was collected from 48,058 eighth graders from Kentucky who took the California Basic Educational Skills Test (Bickel 2007). These students attended 235 different middle schools from 132 different districts. The data includes 11 variables:
+
+dis_id = District Identifier
+
+sch_id = School Identifier
+
+stud_nm = Student Identifier
+
+female = Coded 1 if Female and 0 if Male
+
+nonwhite = Coded 0 if White and 1 otherwise
+
+readn = California Test of Basic Skills Reading Score
+
+mathn = California Test of Basic Skills Math Score
+
+sch_size = School-Level Size (centered natural log)
+
+sch_ses = School-Level SES (socio-economic status, centered)
+
+dis_size = District-Level Size (centered natural log)
+
+dis_ses = District-Level SES (socio-economic status, centered)
+
+This is a multilevel dataset with 3 levels:
+
+Level 1: observational unit is students; variables are stud_nm, female, nonwhite, readn, mathn
+
+Level 2: observational unit is schools; variables are sch_id, sch_size, sch_ses
+
+Level 3: observational unit is districts; variables are dis_id, dis_size, dis_ses
+
+Based on our research question, we only kept following variables for further investigation: 
+
+Level 1: stud_nm, female, nonwhite, mathn
+
+Level 2: sch_id, sch_ses
+
+Level 3: dis_id, dis_ses, dis_size
+
+To make the data clearer for analysis, we mutated variable "female" with two levels 0 and 1 to variable "gender" with two categories "male" and "female". We also mutated variable "nonwhite" with two levels 0 and 1 to variable "ethnic" with two categories "white" and "nonwhite". Observations with missing values for any of the selected variables were removed. The refined dataset contains 46,756 observations and 9 variables. Table 1 displays the first 10 rows of the refined dataset that we will use in this project. 
+
+```{r}
+mathscore <- read.csv("https://raw.githubusercontent.com/proback/BeyondMLR/master/data/kentucky.csv")
+
+
+#omit missing values, mutate gender and ethnicity
+mathscore <- mathscore %>% select(stud_nm, female, nonwhite, mathn, sch_ses, sch_id, dis_id, dis_ses, dis_size) %>% na.omit() %>% mutate(gender = ifelse (female==1, "female", "male"), ethnic = ifelse (nonwhite==0, "white", "nonwhite"))
+
+T1 <- head(mathscore %>% select(stud_nm, gender, ethnic, mathn, sch_id, sch_ses, dis_id, dis_ses, dis_size),10)       
+kable(T1, caption="Table 1: First 10 rows of the dataset")
+```
+
+To begin with, we explored the distribution of our response variable, math score. Figure 1a shows the distribution of math scores for all 8th grade students in the dataset, and figure 1b shows the mean math scores for each of 132 districts. Both figures show that math score follows a normal distribution, and the most frequent score is around 50 points.  
+
+```{r, fig.cap="Figure 1: Math Score (a) for All Students and (b) Average for Each District"}
+
+#Average math score by districts
+mean.dist <- mathscore %>% group_by(dis_id) %>%
+  summarise(meandist = mean(mathn, na.rm = TRUE))
+
+# theme with grid, grey background 
+theme.1 <- theme(axis.title.x = element_text(size = 14),
+  axis.title.y = element_text(size = 14),
+  plot.title=element_text(hjust=.9,face="italic",size=12))
+
+# Histogram of all math scores frequencies
+math.all <- ggplot(data=mathscore,aes(x=mathn)) + 
+  geom_histogram(binwidth = 5, fill = "white",color = "black") + 
+  theme.1  +
+  xlab("Math Score") + ylab("Frequency") + labs(title="(a) Individual Students") 
+
+# Histogram of mean math score by district
+math.mean <- ggplot(data=mean.dist,aes(x=meandist)) + 
+  geom_histogram(binwidth = 2, fill = "white", 
+                 color = "black") + 
+  theme.1 +
+  xlab("Mean Math Score") + ylab("Frequency") + labs(title="(b) District Averages") 
+
+grid.arrange(math.all,math.mean,ncol=2)
+```
+
+To investigate how math scores differ within gender and ethnicity, we created a box plot to compare different combinations of gender and ethnicity (Figure 2). In terms of gender, male and female students of the same race show no difference in average math score. In terms of ethnicity, white students tend to have higher average math score than non-white students of the same sex. 
+
+```{r, fig.cap= "Figure 2: Math Scores by Ethnicity and Sex for All Kentucky Middle School Students"}
+# Box Plots of Math Scores by Ethnicity and Sex for All Kentucky Middle School Students In Our Data
+
+KMS.Ethnicity.Sex <- mathscore %>% unite(col = "Eth.Sex", "gender", "ethnic", sep = "/")
+
+
+ggplot(data = KMS.Ethnicity.Sex, aes(x = Eth.Sex, y = mathn, fill = Eth.Sex))+
+  geom_boxplot(size = 1, color = "gold1")+
+  xlab("Sex & Ethnicity")+ 
+  ylab("California Math Assessment Score")+ 
+  labs(title = "Comparison of Math Scores by Gender and Ethnicity")
+```
+
+We also examined the relationship between math score and district socioeconomic status (SES) and size. Because we have over 46,000 math score values, it is impossible to plot all of them on the same graph. Therefore, we grouped the data by schools, calculated the average math score for each school, and plotted the average school math score against district SES and district size (Figure 3). Figure 3a shows a clear negative relationship between math score and district SES. Schools that are located in districts with higher SES tend to have lower mean math score. Figure 3b shows that there is no relationship between math score and district size. Therefore, we will neglect district size and proceed with district SES for further investigation. 
+
+```{r, fig.cap="Figure 3: Average School Math Score by (a) District SES and (b) District Size"}
+
+meanbysch <- mathscore %>% select(dis_ses, sch_id, dis_size, mathn) %>% group_by(sch_id) %>% summarise(dis.ses = mean(dis_ses, na.rm = TRUE),
+              dis.size = mean(dis_size, na.rm = TRUE),
+              meanscore= mean(mathn, na.rm= TRUE)) 
+
+
+scatter.disses <- ggplot(data=meanbysch, aes(x=dis.ses,y=meanscore)) +
+  geom_point() + 
+  theme.1 + 
+  geom_smooth(method="lm",color="black") + 
+  ylab("Average School Math Scores") + 
+  xlab("District SES") + labs(title="(a)")
+
+
+scatter.dissize<- ggplot(data=meanbysch, aes(x=dis.size,y=meanscore)) +
+  geom_point() + 
+  theme.1 + 
+  geom_smooth(method="lm",color="black") + 
+  ylab("Average School Math Scores") + 
+  xlab("District Size") + labs(title="(b)")
+
+
+grid.arrange(scatter.disses,scatter.dissize,ncol=2)
+```
+
+Figure 4 also displays the relationship between math score and district SES, but in here we calculated the average of math score by districts rather than schools, and also displayed the relationship in terms of gender and ethnicity. Each point represents the average score for all male, female, white, or nonwhite students at a given district; therefore, on each graph, one district is depicted by two points corresponding either two gender groups or two ethnic groups. Figure 4a shows that the relationship between average district math score and district SES is more negative for female than for male students. Figure 4b shows that this relationship is more negative for white than for non-white students. Both scatter plots suggest an interaction for district SES with gender and ethnicity. 
+
+```{r, fig.cap = "Figure 4: Average District Math Score by District SES between (a) Gender and (b) Ethnicity"}
+#table grouping by ses and gender
+disses.gender <- mathscore %>% select(dis_ses, mathn, gender, ethnic) %>% group_by(dis_ses, gender) %>% summarise(meanscore= mean(mathn, na.rm= TRUE))
+
+
+#table grouping by ses and ethnicity
+disses.ethnic <- mathscore %>% select(dis_ses, mathn, gender, ethnic) %>% group_by(dis_ses, ethnic) %>% summarise(meanscore= mean(mathn, na.rm= TRUE))
+
+
+# scatterplot for interaction between disses and gender/ethnicity
+interaction.gender <- ggplot(disses.gender, aes(x = dis_ses, y = meanscore, colour = gender)) + geom_point(aes(shape = gender)) + geom_smooth(aes(linetype = gender), method = lm, se = FALSE) + ylab("Average District Math Scores") + xlab("District Socio-economic Status") + labs(title="(a) By Gender")
+
+interaction.ethnic <- ggplot(disses.ethnic, aes(x = dis_ses, y = meanscore, colour = ethnic)) + geom_point(aes(shape = ethnic)) + geom_smooth(aes(linetype = ethnic), method = lm, se = FALSE) + ylab("Average District Math Scores") + xlab("District Socio-economic Status") + labs(title="(b) By Ethnicity")
+
+grid.arrange(interaction.gender,interaction.ethnic, ncol=2)
+
+```
+
+Figure 5 shows the spaghetti plots for average district math score by gender and ethnicity. Figure 5 supports the information displayed on figure 2 previously that there is a very small difference in math score between 2 sexes, and white students have higher math score than non-white students on average. Figure 5 also allows us to visualize the random slope for gender and ethnicity. Schools with different average math score for female students might have dissimilar difference in average math score between female and male students (Figure 5a). Schools with different average math score for non-white students might have dissimilar difference in average math score between white and non-white students (Figure 5b). The random slopes for ethnic differences appear more varied than those for gender differences.
+
+```{r, fig.cap = "Figure 5: Spaghetti Plots for Average School Math Score by (a) Gender and (b) Ethnicity"}
+meanschgender <- mathscore %>% select(sch_id, mathn, gender, ethnic) %>% group_by(sch_id, gender) %>% summarise(mean.mathn = mean(mathn))
+
+meanschethnic <- mathscore %>% select(sch_id, mathn, gender, ethnic) %>% group_by(sch_id, ethnic) %>% summarise(mean.ethnic = mean(mathn))
+
+slope.gender <- ggplot(data = meanschgender, aes(x = gender, y = mean.mathn))+
+  geom_line(aes(group = sch_id), alpha = 0.1) +
+  geom_smooth(aes(group=1),color="black",size=1) +
+  labs(x = "Gender", y = "Average math score by school", title="(a)")
+
+slope.ethnic <- ggplot(data = meanschethnic, aes(x = ethnic, y = mean.ethnic))+
+  geom_line(aes(group = sch_id), alpha = 0.1) +
+  geom_smooth(aes(group=1),color="black",size=1) +
+  labs(x = "Ethnicity", y = "Average math score by school",title="(b)")
+
+grid.arrange(slope.gender,slope.ethnic,ncol=2)
+```
+
+
+```{r, warning = FALSE}
+kable(CAYMAN_FISH_YEAR, booktabs = T, 
+      caption = "Biyearly Mean Density Index Value Across all Dive Sites on Grand Cayman Island",
+      col.names = c("Year", "Mean Density")) %>%
+  kable_styling(full_width = T)
+
+
+```
+
+### Methods  
+
+We started with a simple model with 3 fixed effects (gender, ethnicity, district SES) and accounting for 2 random effects (schools and districts) (Model 0). The 3 fixed effects are 3 variables for which we want to investigate the correlation with response variable "math score". We accounted for schools and districts as 2 random effects because we assume that students in the same school will have more correlated math scores, and schools within the same district will also have more correlated average math scores, so accounting for these 2 random effects can help explain variability associated with fixed effects. 
+
+```{r, eval = FALSE}
+model0 <- lmer(data=mathscore, mathn ~ gender + ethnic + dis_ses + (1 | sch_id) + (1| dis_id), REML=TRUE)
+summary(model0)
+```
+
+Then, we considered a model with the same 3 fixed effects and 2 random effects as model 0, but we added a random slope for ethnicity (Model 1). The inclusion of random slope is based on what we saw in figure 5b. We assumed that the difference in average school math scores between white and non-white students vary for schools with different average math scores for non-white students. 
+
+```{r, eval = FALSE}
+model1 <- lmer(data=mathscore, mathn ~ gender + ethnic + dis_ses + (ethnic | sch_id) + (1| dis_id), REML=TRUE)
+summary(model1)
+```
+
+To compare Model 0 and Model 1, we used AIC and BIC tests. Both tests prefer Model 1 by returning lower values for this model, so we will proceed with a model that has a random slope for ethnicity. 
+```{r, eval = FALSE}
+AIC(model0, model1)
+BIC(model0, model1)
+```
+
+We then considered Model 2, which is the same as Model 1 but used school SES as one of the 3 fixed effects rather than district SES as in Model 1. In other words, Model 2 contains 3 fixed effects (gender, ethnicity, school SES), 2 random effects (schools, districts), and a random slope (ethnicity). Even though our research question states that we will examine how district SES is correlated with math score, we decided to replace district SES with school SES in this model, because we want to validate our choice for district SES, and see whether investigating socioeconomic status at a larger group (district) or at a lower level (school) is better for studying the relationship between SES and math score.  
+
+```{r, eval = FALSE}
+model2 <- lmer(data=mathscore, mathn ~ gender + ethnic + sch_ses + (ethnic | sch_id) + (1| dis_id), REML=TRUE)
+summary(model2)
+```
+
+Both AIC and BIC tests return lower values for Model 1 than Model 2, which means that it is reasonable to examine SES at district level rather than school level. Therefore, we will proceed with district SES as one of our 3 fixed effects (Model 1). 
+
+```{r, eval = FALSE}
+kable(AIC(model1, model2))
+kable(BIC(model1,model2))
+```
+
+Next, we considered Model 3, which is the same as Model 1, but uses gender for random slope rather than ethnicity in Model 1. Based on Figure 5 above, even though the difference in school math score between 2 genders is noticeably smaller than between 2 ethnic categories, we can see that the difference in average school math scores between male and female students vary for schools with different average math score for female students. Therefore, we want to clarify whether including gender as a random slope is reasonable. 
+
+```{r, eval = FALSE}
+model3 <- lmer(data=mathscore, mathn ~ gender + ethnic + dis_ses + (gender | sch_id) + (1| dis_id), REML=TRUE)
+summary(model3)
+```
+
+
+Both AIC and BIC tests prefer Model 1 over Model 3, which means that ethnicity is better than gender as a random slope. $\rho_{uv}$= -0.63 in Model 1 and $\rho_{uv}$= -0.37 in Model 2, which suggests that the relationship between slope and intercept is stronger for ethnicity than for gender. This result is also reasonable based on Figure 5a and 5b. We will keep using ethnicity as the random slope for our model. 
+
+```{r, eval = FALSE}
+kable(AIC(model1, model3))
+kable(BIC(model1,model3))
+```
+
+Having all fixed effects, random effects and random slope determined, we now consider interaction between variables. First, we built Model 4 which is the same as Model 1 but includes interaction between gender and ethnicity. In this model, we were expecting that the math score for each ethnic category depends on whether the student is male or female. 
+
+```{r, eval = FALSE}
+model4 <- lmer(data=mathscore, mathn ~ gender + ethnic  + gender:ethnic + dis_ses + (ethnic | sch_id) + (1| dis_id), REML=TRUE)
+summary(model4)
+```
+
+The AIC test slightly prefers Model 4, whereas the BIC test slightly prefers Model 1. Model 1 is the nested version of Model 4, so we performed a likelihood ratio test to choose the better one. The test returned a large p-value (p=0.11), suggesting that Model 1 is sufficient and the interaction between gender and ethnicity does not help explain variability in math score. The output for Model 4 also returned a large p-value (p=0.11) for the interaction term of gender and ethnicity, which suggests that there may not be enough evidence for an interaction between these 2 variables. All of these results support what we saw in Figure 2 above: there is insufficient evidence of a difference in the change in expected math score between genders for different ethnic groups or between white and nonwhite students of the same gender. 
+
+```{r, eval = FALSE}
+kable(AIC(model1, model4))
+kable(BIC(model1,model4))
+```
+
+
+```{r, eval = FALSE}
+anova(model1, model4, test = "Chisq")
+```
+
+We continue looking at interaction between fixed effects. In Model 5, we examined the interaction between gender and district SES. We expected that the relationship between math score and district SES is different for each sex. The output returned a small p-value (p=0.002) for the interaction term, which suggests that there is evidence for an interaction between these 2 variables. This finding corresponds to what we saw in Figure 4a that the slope for the relationship between average district math score and district SES is different for female and male students. 
+
+```{r}
+model5 <- lmer(data=mathscore, mathn ~ gender + ethnic + dis_ses + gender:dis_ses + (ethnic|sch_id) + (1|dis_id), REML=TRUE)
+```
+
+```{r, eval = FALSE}
+summary(model5)
+```
+
+Next, we considered Model 6 with the interaction between the last pair of fixed effects- ethnicity and district SES. In this model, we assumed that the relationship between math score and district SES depends on whether the student is white or non-white. The output of Model 6 revealed a large p-value (p=0.28) for the interaction, which suggests that there is not enough evidence for an interaction between ethnicity and district SES. This result is interesting since it does not corresponds to what we saw in Figure 4b that showed a difference in slope between 2 ethnic categories. This result suggested that the difference in slope that we visualized in Figure 4b is not significant enough to say that the 2 ethnic groups are different. Therefore, we will not include an interaction term for ethnicity and district SES. 
+
+To be more certain, we compared the AIC and BIC of Model 5 and Model 6. As expected, the tests showed that Model 5 is better. We will only keep the interaction between 2 fixed effects gender and district SES. 
+
+```{r, eval = FALSE}
+model6 <- lmer(data=mathscore, mathn ~ gender + ethnic + dis_ses + ethnic:dis_ses + (ethnic | sch_id) + (1| dis_id), REML=TRUE)
+summary(model6)
+```
+
+```{r, eval = FALSE}
+kable(AIC(model5, model6))
+kable(BIC(model5,model6))
+```
+
+At this point, we only have Model 1 and Model 5 for consideration. Again, we did AIC and BIC tests for both models. The AIC test slightly prefers Model 5, whereas BIC test prefers Model 1. We then performed likelihood ratio test, because Model 1 is a nested version of Model 5. The test returned a small p-value (p=0.002) which provided evidence against the null hypothesis that Model 1 is sufficient and suggested that accounting for interaction between gender and district SES (Model 5) helps explain the variability in math score. The output of Model 5 also revealed a small p-value (p=0.002) for the interaction term, which validates that there is evidence for an interaction between gender and district SES.
+
+```{r, eval = FALSE}
+kable(AIC(model5, model1))
+kable(BIC(model5,model1))
+```
+
+```{r, eval = FALSE}
+anova(model1, model5, test = "Chisq")
+```
+
+In the end, Model 5 is our final model. This model includes 3 fixed effects (gender, ethnicity, district SES), an interaction (gender and district SES), 2 random effects (schools and districts) and a random slope (ethnicity). The equation form of this model is shown below. $Y_{ijk}$, which is our response variable, represents the math score of student $k$ in school $j$ in district $i$.
+
+$$
+\begin{align*}
+Y_{ijk} & = [\alpha_{0}+\alpha_{1}\textrm{gender}_{ijk}+\alpha_{2}\textrm{ethnic}_{ijk}+\beta_{0}\textrm{dis_ses}_{i}+\beta_{1}\textrm{gender}_{ijk}\textrm{dis_ses}_{i}] \\
+    & + [t_{i}+u_{ij}+v_{ij}\textrm{ethnic}_{ijk}+\epsilon_{ijk}]
+\end{align*}
+$$
+
+where,
+
+$$
+\left[ \begin{array}{c}
+            u_{ij} \\ v_{ij}
+          \end{array}  \right] \sim N \left( \left[
+          \begin{array}{c}
+            0 \\ 0
+          \end{array} \right], \left[
+          \begin{array}{cc}
+            \sigma_{u}^{2} & \rho_{uv}\sigma_{u}\sigma_v \\
+            \rho_{uv}\sigma_{u}\sigma_v & \sigma_{v}^{2}
+          \end{array} \right] \right) 
+$$
+and $t_{i}\sim N(0,\sigma_t^2)$
+
+and $\epsilon_{ijk}\sim N(0,\sigma^2)$.   
+
+This model has 10 parameters: $\alpha_0$, $\alpha_1$, $\alpha_2$, $\beta_0$, $\beta_1$, $\sigma_u$, $\sigma_v$, $\sigma_t$, $\sigma$, $\rho_{uv}$. 
+$\alpha_0$ represents the expected average math score for students who are female, non-white and in a district with an average SES (SES=0). 
+$\alpha_1$ represents the expected difference in average math score between male and female students of the same ethnicity and in a district with an average SES (SES=0). 
+$\alpha_2$ represents the expected difference in average math score between white and non-white students of the same gender in the same district SES. 
+$\beta_0$ represents the expected rate of change in average math score for each point of change in district SES for female students in both ethnic groups. 
+$\beta_1$ represents the expected difference in the rate of change in average math score for each point of change in district SES between male and female students of the same ethnicity and in the same district SES. 
+$\sigma_t$ represents the variability in average math score between districts. 
+$\sigma_u$ represents the variability in average math score for non-white students between schools in the same district. 
+$\sigma$ represents the variability in math scores between students at the same school and district. 
+$\sigma_v$ represents the variability in the difference in average math score between white and non-white students between schools in the same district. 
+$\rho_{uv}$ represents the correlation between average math score for non-white students and difference between white and non-white students' average math score between schools in the same district. 
+
+### Results  
+
+Table 2 displays the estimates for the fixed effects of our final model. 
+The expected average district math score for students who are female, non-white and in a district with an average SES (SES=0) in Kentucky is 41.5 points. 
+The math score for male students is expected to be 1.04 points lower than for female students of the same ethnicity and in a district with an average SES (SES=0) in Kentucky.
+The math score for white students is expected to be 9.1 points higher, on average, than for non-white students of the same gender and in the same district SES in Kentucky. 
+For each point increase in district SES, the math score for female students in both ethnic groups is expected to decrease by 0.28 points on average. 
+For each point increase in district SES, the math score for male students in both ethnic groups is expected to decrease by |-0.28 + 0.036|= 0.24 points on average.
+All of the above estimates of fixed effects are significant (small p-values). 
+
+```{r, fig.cap="Table 2: Estimates of Fixed Effects"}
+kable(summary(model5)$coefficients, caption = "Table 2: Summary of Model Coefficients")
+```
+
+Table 3 displays the variance and covariance estimates for our random effects. We had 5 parameters. 
+The standard deviation in math scores between 8th graders in the same middle school and district in Kentucky is $\sigma$=20.011. 
+The standard deviation in average math score of non-white students between middle schools in the same district in Kentucky is $\sigma_u$=5.872. 
+The standard deviation in average math score between districts in Kentucky is $\sigma_t$ = 0.00. This might be due to the fact that accounting for fixed effects explains the variability between districts effectively, because we also tested the unconditional means model without any explanatory variables and it showed that there is variability between districts, but after adding fixed effects to our model, this variability comes to 0. Moreover, at each SES level, there may be only one district; we included district SES as a fixed effect, which accounts for differences between district, and because there is no differences between districts with the same SES (if we only have one district for each SES), the variability at district level is 0. 
+The standard deviation in the difference in average math score between white and non-white students between schools in the same district in Kentucky is $\sigma_v$=5.701. 
+There is a negative correlation between average school math score for non-white students and the difference between white and non-white students between schools in the same district in Kentucky ($\rho_{uv}$=-0.63): middle schools with higher average math score for non-white eighth graders tend to have smaller difference in average math score between white and non-white students than schools with smaller average math score for non-white students. 
+
+```{r, fig.cap="Table 3: Variance and Covariance Estimates for Random Effects"}
+kable(as.data.frame(VarCorr(model5)), caption = "Table 3: Variance and Covariance Estimates")
+```
+
+
+### Discussion and Conclusions   
+
+In this study, we investigated the relationship between math scores and socioeconomic status. We also asked how gender and ethnicity mediate this relationship. Using AIC, BIC, and ANOVA tests to compare models against each other, we found Model 5 to be the best at portraying this relationship.
+
+First, our model indicated that math scores tend to decrease as socioeconomic status increases. Though this may seem surprising, research has shown that college students who rely on financial aid, a measure of socioeconomic status, tend to have higher G.P.A.'s than those who do not (Kirby, 2007). So, this trend may indicate that students with lower socioeconomic status have an external incentive, like future financial aid, motivating them to maintain higher grades than students of higher socioeconomic status. It is worth noting that the original data did not define its measure of socioeconomic status, which limits the reliability of this comparison.
+
+Next, we found a significant increase in math scores for white students over non-white students, even after accounting for socioeconomic status (which is commonly cited as a confounding variable in race disparities). This is in line with research by Stanford University that found an average difference of 1.6 grade levels between white and non-white students (Reardon, 2019).
+
+Interestingly, our model had a negative correlation parameter ($\rho_{uv}$) between the random intercept and random slope terms. This means that for schools in the same district, as the average math score for non-white students at a school increases, the gap between the average scores for white and nonwhite students decreases. Essentially, the slope between average math scores for white and nonwhite students in the same school becomes less steeply positive as the average non-white math score increases. 
+
+In relation to this finding, it is worth noting research by Reardon (2019), whose study on standardized test scores between black and white students at the district level throughout the United States found that when black students scored higher on average there was a larger gap between their academic scores and the average score for white students in that same district. Their data indicated that as the average standardized test score in a district increased for black students, the slope of the relationship between black and white students for that district became more steeply positive, and thus the difference in average scores grew.
+
+It may seem this research is contradictory to our model findings, but, the trends that Reardon (2019) observed were compared at the district level for schools across the nation while our data focused on the trend at the individual student level. So, we cannot really make any observations about contradiction because the findings are reported on different levels. Additionally, Reardon's (2019) data comes from standardized test scores in general, and does not focus specifically on math scores, which limits the validity of these comparisons. Additionally, their data analyzed only test scores from black students compared to white students, while our data includes all "non-white" students. It is very plausible that adding in other ethnicities, like in our data, would have an impact on the relationship Reardon (2019) observed. Nevertheless, their findings are worthy of note when looking at predicting academic scores as we did here.
+
+Finally, we found evidence of an interaction between gender and district socioeconomic status suggesting that the rate of change in math scores by socioeconomic status depends on students’ gender. Specifically, as socioeconomic status increases, we found that math scores for females decrease faster than for males. On average, males tend to score lower in districts with lower economic status, but females tend to perform slightly worse in districts of high economic status. This trend supports research by Reardon et al. (2018), which found that math gaps tend to favor males more in districts of higher socioeconomic status.
+
+Overall, our data is consistent with previous research on differences in academic performance across gender, ethnicity, and socioeconomic status. Our findings show that there should be initiatives combating socioeconomic gaps between students of different ethnicities over students of different genders. Additionally, future research should focus on identifying specific socioeconomic factors leading to differences in academic achievement. Across studies, measures have grouped several variables into socioeconomic status to find overall trends, but it may be that one variable is more influential than others. To develop better programs to combat these differences, future research should focus on identifying these variables individually.
+
+\newpage 
+
+### References  (5 points)
+
+- Balkis, M., & Duru, E. (2017). Gender Differences in the Relationship between Academic Procrastination, Satisfaction with Academic Life, and Academic Performance. Electronic Journal of Research in Educational Psychology, 15(1), 105-125. Retrieved from https://www.redalyc.org/pdf/2931/293150349004.pdf
+
+- Kirby, E. (2007). Predictors of White and Minority Student Success at a Private Women’s College. College Student Journal, 41(2), 460.
+
+- Reardon, S. F. (2019). What explains white-black differences in average test scores? Retrieved from The Educational Opportunity Project at Stanford University, https://edopportunity.org/discoveries/white-black-differences-scores/
+
+- Reardon, S.F., Fahle, E.M., Kalogrides, D., Podolsky, A., & Zárate, R.C. (2018). Gender Achievement Gaps in U.S. School Districts. Retrieved from the Stanford Center for Education Policy Analysis, https://cepa.stanford.edu/content/gender-achievement-gaps-us-school-districts
+
+- Roback, P., & Legler, J. (2020). Beyond Multiple Linear Regression: Applied Generalized Linear Models and Multilevel Models in R. Retrieved from https://bookdown.org/roback/bookdown-BeyondMLR/
+
+
+
