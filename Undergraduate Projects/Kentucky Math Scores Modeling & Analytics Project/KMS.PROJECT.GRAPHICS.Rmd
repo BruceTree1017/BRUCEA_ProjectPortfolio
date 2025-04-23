@@ -1,0 +1,173 @@
+---
+title: "Final Project: Part One R Graphics"
+author: "Adam Bruce"
+date: "02/02/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message=FALSE, warning=FALSE)
+# feel free to change fig.height or fig.width here or in specific chunk headings. 
+```
+
+
+```{r}
+# load packages - add any you would like
+library(tidyverse)
+library(lme4)
+library(lmerTest)
+library(gridExtra)
+library(knitr)
+library(dplyr)
+library(ggplot2)
+library(knitr)
+library(gridExtra)
+```
+
+## Abstract 
+
+A 150 word abstract.
+
+
+\newpage
+
+### Background and Significance   
+
+Type background and significance section here. 
+
+### Data  
+
+Below are my five initial exploratory graphics and summaries of the Kentucky Math Score Dataset.  
+
+Note KMS is Kentucky Math Scores
+
+
+```{r}
+
+# Note KMS is Kentucky Math Scores
+
+KMS <- read_csv("https://raw.githubusercontent.com/proback/BeyondMLR/master/data/kentucky.csv")
+
+head(KMS)
+
+
+KMS <- na.omit(KMS)
+
+```
+
+### 1 Boxplot for Male vs Female Scores for ALL 48,058 students from ALL schools
+
+```{r, fig.width = 10, fig.height = 6}
+
+#1 Boxplot for Male vs Female Scores for ALL 48,058 students from ALL schools
+
+
+KMS$female <- as.character(KMS$female)
+
+ggplot(data = KMS, aes(x = female, y = mathn, color = female, fill = female))+
+  geom_boxplot(size = 1.5)+
+  scale_fill_manual(values=c("dodgerblue", "gold2"))+
+  scale_color_manual(values=c("chartreuse", "darkorchid1"))+
+  xlab("Sex")+ 
+  ylab("California Math Assessment Score")+ 
+  labs(title = "Comparison of California Math Assessment Scores for Female (1) vs Male (0) Kentucky 8th Grade Students")
+
+  
+
+```
+
+### 2 Summary Table for Average Scores for the 132 Districts
+
+
+The HEAD of the Kable created is displayed here (it would be too long if I displayed all 132 districts)
+
+```{r}
+
+#2 Summary Table for Average Scores for the 132 Districts
+
+DISTRICT.KMS <- KMS %>% group_by(dis_id) %>% summarize(MEAN.MATH = mean(mathn), MEAN.SIZE = mean(sch_size), MEAN.SES = mean(sch_ses), MEAN.DLS = mean(dis_size), MEAN.DSES = mean(dis_ses))
+
+# The HEAD of the Kable created is displayed here (it would be too long if I displayed all 132 districts)
+
+kable(head(DISTRICT.KMS))
+
+
+```
+
+
+### 3 Scatter Plots of Non-Averages VS. Averages, District Size & Math Scores
+
+
+```{r, fig.height= 7, fig.width = 10}
+
+# 3 Scatter Plots of Non-Averages VS. Averages, District Size & Math Scores
+
+All.DS.Scatter <- ggplot(data = KMS, aes(x = dis_size, y = mathn))+
+  geom_point(color = "dodgerblue")+
+  stat_smooth(method = "lm", color = "gold1", se = F)+
+  xlab("Centered ln() District=Level Size")+ 
+  ylab("Math Score")+ 
+  labs(title = "Math Score by District-Level Size All 48,058 Kentucky Middle Schoolers")
+
+Avg.DS.Scatter <- ggplot(data = DISTRICT.KMS, aes(x = MEAN.DLS, y = MEAN.MATH))+
+  geom_point(color = "magenta1")+
+  stat_smooth(method = "lm", color ="springgreen2", se = F)+
+  xlab("Average Centered ln() District-Level Size")+ 
+  ylab("Average Math Score")+ 
+  labs(title = "Average Math Score by Average District-Level Size for Middle School Students in Kentucky")
+
+grid.arrange(All.DS.Scatter, Avg.DS.Scatter, ncol = 1)
+
+
+```
+
+
+### 4 Histograms of Non-Averages VS. Averages in Math Scores
+
+```{r, fig.width=10}
+# 4 Histograms of Non-Averages VS. Averages in Math Scores
+
+All.KMS.Histogram <- ggplot(data = KMS, aes(x = mathn))+
+  geom_histogram(color = "blue", fill = "pink", bins = 40)+
+  xlab("Math Score")+ 
+  ylab("Frequency")+ 
+  labs(title = "Distribution of Math Scores for All 48,058 Middle Schoolers in Kentucky")
+
+Avg.KMS.Histogram <- ggplot(data = DISTRICT.KMS, aes(x = MEAN.MATH))+
+  geom_histogram(color = "red", fill = "orange", bins = 40)+
+  xlab("Average Math Score")+ 
+  ylab("Frequency")+ 
+  labs(title = "Distribution of Average Math Scores by District for Middle School Students in Kentucky")
+
+grid.arrange(All.KMS.Histogram, Avg.KMS.Histogram, ncol = 1)
+```
+
+
+### 5 Box Plots of Math Scores by Ethnicity and Sex for All Kentucky Middle School Students In Our Data
+
+```{r, fig.width = 10, fig.height = 6}
+
+# Box Plots of Math Scores by Ethnicity and Sex for All Kentucky Middle School Students In Our Data
+
+
+
+KMS.Ethnicity.Sex <- KMS %>% mutate(female = ifelse(female == 1, "F", "M"), nonwhite = ifelse(nonwhite == 1, "NW", "W")) %>% unite(col = "Eth.Sex", "female", "nonwhite", sep = "/")
+
+KMS.Ethnicity.Sex$Eth.Sex <- as.character(KMS.Ethnicity.Sex$Eth.Sex)
+
+ggplot(data = KMS.Ethnicity.Sex, aes(x = Eth.Sex, y = mathn, fill = Eth.Sex))+
+  geom_boxplot(size = 1, color = "gold1")+
+  xlab("Sex & Ethnicity")+ 
+  ylab("California Math Assessment Score")+ 
+  labs(title = "Comparison of California Math Assessment Scores for the Combination of Female, Male, White, 
+       and Non-White Kentucky 8th Grade Students")
+
+```
+
+
+
+NOTE: I omitted this second portion of the report because it is unnecessary for this assignment. 
+
+
+
+
