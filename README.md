@@ -39,4 +39,4 @@ Below is a roadmap of all the project folders available for review in this GitHu
 - Senior Capstone: Grand Cayman Longitudinal Reef Health Analysis
 
 # Social Profiles
-Follow me on [LinkedIn](www.linkedin.com/in/adam-bruce-6579b5319)
+Follow me on [LinkedIn](https://www.linkedin.com/in/adam-bruce-6579b5319)
