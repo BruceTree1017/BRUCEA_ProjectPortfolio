@@ -10,12 +10,26 @@ Attended Lawrence University in Appleton, Wisconsin
 - Major in Biology, Minor in Statistics and Data Science
 
 # Repository Projects Overview
-Below is a breakdown of all the projects available for review in this GitHub repository
+Below is a roadmap of all the project folders available for review in this GitHub repository
 
 ### Graduate Projects
+- DS730 Microsoft Azure Class Projects:
+  - HIVE
+  - Java Multithreading
+  - MapReduce
+  - PIG
+  - SPARK
+- Machine Learning:
+  - Predicting Australian Athlete Sport Participation
+  - Predicting NFL Draft Round
+- Statistical Modeling & Analytics:
+  - Cancellation & Retention Analysis (Turf Badger)
+  - Predicting & Interpreting Orange Juice Sales
+  - Sentiment Analysis of Customer Feedback (Turf Badger)
+  - Social Media Model Retention Analysis
+  - Social Network Analysis (Turf Badger)
 - ZoneBadger Heuristic Modeling Capstone
 - Tableau Revenue & Sales Forecasting
-- DS
 
 ### Undergraduate Projects
 - Java Pokemon Game Object Orientated Programming
