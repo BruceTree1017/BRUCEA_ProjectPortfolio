@@ -1,7 +1,6 @@
 # Professional Experience
 
 ### Business Technology Developer II – Schneider (Green Bay, Wisconsin)
-- Note: Example code and README documentation excluded due to confidentiality under NDA agreement.
 
 ##### Business Intelligence & Reporting Solutions
 - System Outage Reporting
