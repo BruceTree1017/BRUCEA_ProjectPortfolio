@@ -1,3 +1,30 @@
+# Professional Experience
+
+### Business Technology Developer II – Schneider (Green Bay, Wisconsin)
+- Note: Example code and README documentation excluded due to confidentiality under NDA agreement.
+
+##### Business Intelligence & Reporting Solutions
+- System Outage Reporting
+  - Designed and deployed Power BI reports to monitor and visualize system outages for mission-critical platforms.
+  - Improved response time for incident resolution through enhanced data visibility.
+- Pre-Arrival Notification Reporting
+  - Developed alert-based reporting to notify operational teams of incoming shipments, ensuring timely equipment preparation.
+  - Supported proactive logistics planning and reduced idle equipment time.
+- Delivery Verification Reporting
+  - Built analytical reports to identify shipments missing delivery confirmations across regional networks.
+  - Strengthened compliance and accountability through data-driven exception tracking.
+
+##### Automated Server-Based Processes (GitHub-Hosted)
+- Order Adjustment Automation
+  - Engineered automation to apply order-specific adjustments and audit post-process results.
+  - Safeguarded revenue by validating charge accuracy and preventing financial discrepancies.
+  - Increased team efficiency by eliminating hundreds of manual data-entry tasks daily.
+  - Deployed via server-scheduled jobs using Bash and Python, with integrated dynamic logging and email notifications.
+- Equipment Utilization Scorecard
+  - Developed automated pipeline to track equipment flow and utilization across multiple regions.
+  - Empowered leadership with actionable insights for optimizing asset allocation and operational strategy.
+  - Implemented as a recurring Bash/Python server job with logging, maintenance, and email alert functionality.
+
 # Education Background
 
 ### Graduate
