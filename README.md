@@ -4,25 +4,41 @@
 
 ##### Business Intelligence & Reporting Solutions
 - System Outage Reporting
-  - Designed and deployed Power BI reports to monitor and visualize system outages for mission-critical platforms.
-  - Improved response time for incident resolution through enhanced data visibility.
+  - Designed and deployed Power BI reports to allow cmission-critical business functions to continue in the event of system outages for core platforms.
 - Pre-Arrival Notification Reporting
-  - Developed alert-based reporting to notify operational teams of incoming shipments, ensuring timely equipment preparation.
+  - Developed alert-based reporting to notify rails of incoming equipment, ensuring timely preparation and avoiding driver delays.
   - Supported proactive logistics planning and reduced idle equipment time.
 - Delivery Verification Reporting
   - Built analytical reports to identify shipments missing delivery confirmations across regional networks.
   - Strengthened compliance and accountability through data-driven exception tracking.
+- Misroute Activities & Shipment Performance Oversight Reporting
+  - Created analytical reports to proactively identify misroute-causing activities and target pay-impacting shipment assignment discrepancies.
+  - Enabled targeted training for employees and compliance improvements, reducing long-term revenue leakage and strengthening accountability.
 
 ##### Automated Server-Based Processes (GitHub-Hosted)
-- Order Adjustment Automation
-  - Engineered automation to apply order-specific adjustments and audit post-process results.
-  - Safeguarded revenue by validating charge accuracy and preventing financial discrepancies.
-  - Increased team efficiency by eliminating hundreds of manual data-entry tasks daily.
-  - Deployed via server-scheduled jobs using Bash and Python, with integrated dynamic logging and email notifications.
+- Appointment Reconfirmation Automation
+  - Designed a configurable automation framework to manage appointment changes and reconfirmation logic at scale.
+  - Enabled business-controlled rule toggling by location, liability category, and operational scenario through centralized configuration files.
+  - Reduced manual workload by dozens of hours weekly while improving scheduling consistency and service reliability.
+  - Built using Python/Bash orchestration with logging, alerting, and fail-safe controls.
+- Pre-Release & Equipment Readiness Automation
+  - Developed an automated intake pipeline that monitors system signals indicating asset readiness and dynamically determines scheduling timelines.
+  - Incorporated flexible business-rule configuration to support evolving operational policies.
+  - Accelerated asset flow, improved equipment utilization, and reduced delay-related revenue risk.
+ End-to-End Revenue Safeguarding Automation
+  - Engineered a fully automated pipeline to identify, validate, and process time-based accessorial charges tied to equipment and driver utilization.
+  - Automated charge creation through post-process audit and invoicing handoff.
+  - Significantly increased capture of previously under-realized revenue while eliminating hundreds of manual processing tasks daily.
+  - Implemented using Bash/Python server-scheduled jobs with dynamic configuration controls, logging, and automated notifications.
+- Accessorial Validation & Compliance Engine
+  - Developed cross-system validation logic to ensure only policy-compliant accessorial events advance to invoicing.
+  - Introduced upstream verification workflows that materially increased weekly revenue capture for underutilized charge categories.
+  - Designed for scalability with configurable business rules, minimizing operational overhead while maximizing charge accuracy.
 - Equipment Utilization Scorecard
   - Developed automated pipeline to track equipment flow and utilization across multiple regions.
   - Empowered leadership with actionable insights for optimizing asset allocation and operational strategy.
   - Implemented as a recurring Bash/Python server job with logging, maintenance, and email alert functionality.
+    
 
 # Education Background
 
