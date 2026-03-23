@@ -38,7 +38,13 @@
   - Developed automated pipeline to track equipment flow and utilization across multiple regions.
   - Empowered leadership with actionable insights for optimizing asset allocation and operational strategy.
   - Implemented as a recurring Bash/Python server job with logging, maintenance, and email alert functionality.
-    
+
+##### Automated Blue Prism-based Process (GitHub-Hosted)
+- Accessorial Recovery Automation
+  - Designed a warehouse-environment VQL logic-based process identifying events justifying a specific enterprise accessorial
+  - Validated the result set to mark truly chargeable occurrences seperately than non-chargeable occurrences based on factors like liable party contracts or environment conditions at event time. 
+  - Operationalized the process to run in real-time creating records for billing occurrences passing validation to liable parties
+  - Provided "receipts" for each invalid/valid occurrences to support against disputes. 
 
 # Education Background
 
