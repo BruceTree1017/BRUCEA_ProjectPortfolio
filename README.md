@@ -4,38 +4,37 @@
 
 ##### Business Intelligence & Reporting Solutions
 - System Outage Reporting
-  - Designed and deployed Power BI reports to allow cmission-critical business functions to continue in the event of system outages for core platforms.
+  - Designed and deployed Power BI reports to support continuity of critical business functions during system outages across core platforms.
 - Pre-Arrival Notification Reporting
-  - Developed alert-based reporting to notify rails of incoming equipment, ensuring timely preparation and avoiding driver delays.
-  - Supported proactive logistics planning and reduced idle equipment time.
+  - Developed alert-based reporting to notify external entities of incoming equipment, improving preparation time and reducing enterprise delays.
+  - Supported proactive logistics planning and improved asset readiness.
 - Delivery Verification Reporting
-  - Built analytical reports to identify shipments missing delivery confirmations across regional networks.
-  - Strengthened compliance and accountability through data-driven exception tracking.
+  - Built analytical reports to identify shipments missing delivery confirmations for a specific customer.
+  - Strengthened compliance and accountability through this data-driven exception tracking.
 - Misroute Activities & Shipment Performance Oversight Reporting
-  - Created analytical reports to proactively identify misroute-causing activities and target pay-impacting shipment assignment discrepancies.
-  - Enabled targeted training for employees and compliance improvements, reducing long-term revenue leakage and strengthening accountability.
+  - Created analytical reporting to identify operational patterns contributing to shipment misroutes and assignment inconsistencies.
+  - Enabled targeted training and process improvements, supporting long-term operational efficiency and accountability.
 
 ##### Automated Server-Based Processes (GitHub-Hosted)
 - Appointment Reconfirmation Automation
-  - Designed a configurable automation framework to manage appointment changes and reconfirmation logic at scale.
-  - Enabled business-controlled rule toggling by location, liability category, and operational scenario through centralized configuration files.
-  - Reduced manual workload by dozens of hours weekly while improving scheduling consistency and service reliability.
+  - Designed a configurable automation framework to manage appointment updates and reconfirmation processes at scale.
+  - Enabled flexible rule management through centralized configuration, supporting multiple operational scenarios.
+  - Significantly reduced manual workload while improving scheduling consistency and service reliability.
   - Built using Python/Bash orchestration with logging, alerting, and fail-safe controls.
 - Pre-Release & Equipment Readiness Automation
-  - Developed an automated intake pipeline that monitors system signals indicating asset readiness and dynamically determines scheduling timelines.
-  - Incorporated flexible business-rule configuration to support evolving operational policies.
-  - Accelerated asset flow, improved equipment utilization, and reduced delay-related revenue risk.
+  - Developed an automated pipeline that responds to system events to support executing in real-time based on equipment readiness.
+  - Incorporated flexible configuration to adapt to evolving operational policies.
+  - Improved asset flow, utilization, and overall operational responsiveness.
 - Equipment Utilization Scorecard
   - Developed automated pipeline to track equipment flow and utilization across multiple regions.
-  - Empowered leadership with actionable insights for optimizing asset allocation and operational strategy.
-  - Implemented as a recurring Bash/Python server job with logging, maintenance, and email alert functionality.
+  - Implemented as a recurring Bash/Python server job with logging, maintenance, and alerting functionality.
 
-##### Automated Blue Prism-based Process (GitHub-Hosted)
+##### Automated RPA-Based Process
 - Accessorial Recovery Automation
-  - Designed a warehouse-environment VQL logic-based process identifying events justifying a specific enterprise accessorial
-  - Validated the result set to mark truly chargeable occurrences seperately than non-chargeable occurrences based on factors like liable party contracts or environment conditions at event time. 
-  - Operationalized the process to run in real-time creating records for billing occurrences passing validation to liable parties
-  - Provided "receipts" for each invalid/valid occurrences to support against disputes. 
+  - Designed an automated process to identify and validate operational events with for accessorial financial impact.
+  - Applied rule-based validation to distinguish between qualifying and non-qualifying scenarios.
+  - Operationalized the process to generate structured records for downstream processing and review.
+  - Produced detailed audit outputs to support internal validation and dispute resolution processes.
 
 # Education Background
 
