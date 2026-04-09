@@ -41,7 +41,7 @@
 ### Graduate
 Attended the University of Wisconsin-Green Bay in Green Bay, Wisconsin
 - Graduated with a Master of Science in Data Science in May, 2025
-- Acieved a 4.0 cumulative GPA
+- Achieved a 4.0 cumulative GPA
 
 ### Undergraduate 
 Attended Lawrence University in Appleton, Wisconsin
