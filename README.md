@@ -46,7 +46,7 @@ Attended the University of Wisconsin-Green Bay in Green Bay, Wisconsin
 ### Undergraduate 
 Attended Lawrence University in Appleton, Wisconsin
 - Graduated *summa cum laude* in course with a 3.986 cumulative GPA
-- Acieved a Bachelor of Arts in June, 2023
+- Achieved a Bachelor of Arts in June, 2023
 - Major in Biology, Minor in Statistics and Data Science
 
 # Repository Projects Overview
