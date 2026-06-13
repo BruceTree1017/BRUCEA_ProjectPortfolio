@@ -31,7 +31,7 @@
 
 ##### Automated RPA-Based Process
 - Accessorial Recovery Automation
-  - Designed an automated process to identify and validate operational events with for accessorial financial impact.
+  - Designed an automated process to identify and validate operational events for accessorial financial impact.
   - Applied rule-based validation to distinguish between qualifying and non-qualifying scenarios.
   - Operationalized the process to generate structured records for downstream processing and review.
   - Produced detailed audit outputs to support internal validation and dispute resolution processes.
