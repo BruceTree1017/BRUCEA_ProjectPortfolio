@@ -17,7 +17,7 @@
 
 ##### Automated Server-Based Processes (GitHub-Hosted)
 - Appointment Reconfirmation Automation
-  - Designed a configurable automation framework to manage appointment updates and reconfirmation processes at scale.
+  - Designed a configurable automation framework to manage appointment updates and reconfirmation processes at scale using REST API integrations.
   - Enabled flexible rule management through centralized configuration, supporting multiple operational scenarios.
   - Significantly reduced manual workload while improving scheduling consistency and service reliability.
   - Built using Python/Bash orchestration with logging, alerting, and fail-safe controls.
