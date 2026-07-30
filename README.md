@@ -2,20 +2,11 @@
 
 ### Business Technology Developer II – Schneider (Green Bay, Wisconsin)
 
-##### Business Intelligence & Reporting Solutions
-- System Outage Reporting
-  - Designed and deployed Power BI reports to support continuity of critical business functions during system outages across core platforms.
-- Pre-Arrival Notification Reporting
-  - Developed alert-based reporting to notify external entities of incoming equipment, improving preparation time and reducing enterprise delays.
-  - Supported proactive logistics planning and improved asset readiness.
-- Delivery Verification Reporting
-  - Built analytical reports to identify shipments missing delivery confirmations for a specific customer.
-  - Strengthened compliance and accountability through this data-driven exception tracking.
-- Misroute Activities & Shipment Performance Oversight Reporting
-  - Created analytical reporting to identify operational patterns contributing to shipment misroutes and assignment inconsistencies.
-  - Enabled targeted training and process improvements, supporting long-term operational efficiency and accountability.
-
-##### Automated Server-Based Processes (GitHub-Hosted)
+##### Automated Server/RPA-Based Processes (GitHub-Deployed)
+- Intermodal Accessorial Backend
+  - Designed an end-to-end pipeline applying business logic to validate, calculate, and formally invoice for Intermodal accessorial events per customer-specific contractual agreements.
+  - Implemented SQL scrubbing logic alongside Python to Blue Prism exchange layers to secure charge additions on non-authorization required events.
+  - Integrated authorization requesting logic to automate the approval process through customer-defined contact points.
 - Appointment Reconfirmation Automation
   - Designed a configurable automation framework to manage appointment updates and reconfirmation processes at scale using REST API integrations.
   - Enabled flexible rule management through centralized configuration, supporting multiple operational scenarios.
@@ -28,13 +19,24 @@
 - Equipment Utilization Scorecard
   - Developed automated pipeline to track equipment flow and utilization across multiple regions.
   - Implemented as a recurring Bash/Python server job with logging, maintenance, and alerting functionality.
-
-##### Automated RPA-Based Process
 - Accessorial Recovery Automation
   - Designed an automated process to identify and validate operational events for accessorial financial impact.
   - Applied rule-based validation to distinguish between qualifying and non-qualifying scenarios.
   - Operationalized the process to generate structured records for downstream processing and review.
   - Produced detailed audit outputs to support internal validation and dispute resolution processes.
+ 
+##### Business Intelligence & Reporting Solutions
+- System Outage Reporting
+  - Designed and deployed Power BI reports to support continuity of critical business functions during system outages across core platforms.
+- Pre-Arrival Notification Reporting
+  - Developed alert-based reporting to notify external entities of incoming equipment, improving preparation time and reducing enterprise delays.
+  - Supported proactive logistics planning and improved asset readiness.
+- Delivery Verification Reporting
+  - Built analytical reports to identify shipments missing delivery confirmations for a specific customer.
+  - Strengthened compliance and accountability through this data-driven exception tracking.
+- Misroute Activities & Shipment Performance Oversight Reporting
+  - Created analytical reporting to identify operational patterns contributing to shipment misroutes and assignment inconsistencies.
+  - Enabled targeted training and process improvements, supporting long-term operational efficiency and accountability.
 
 # Education Background
 
